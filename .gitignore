@@ -1,0 +1,18 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# API keys and credentials
+.env
+kaggle.json
+
+# Local experiment memory
+experiments.json
+
+# Downloaded competition data
+sample_submission.csv
+train.csv
+test.csv
