@@ -239,4 +239,3 @@ def get_current_solution() -> str:
 
     with open(solution_path, "r", encoding='utf-8') as f:
         return f.read()
-
