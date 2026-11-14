@@ -9,10 +9,10 @@ __pycache__/
 .env
 kaggle.json
 
-# Local experiment memory
-experiments.json
-
 # Downloaded competition data
 sample_submission.csv
 train.csv
 test.csv
+
+comp_data/
+solutions/*/output/

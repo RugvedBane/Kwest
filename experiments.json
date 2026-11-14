@@ -1,0 +1,30 @@
+[
+    {
+        "comp_slug": "playground-series-s6e11",
+        "description": "LGBM+XGB rank blend 45:55",
+        "score": 0.94632,
+        "notes": [
+            "Single rank blend, LGBM weight 0.45 and XGB weight 0.55"
+        ]
+    },
+    {
+        "comp_slug": "playground-series-s6e11",
+        "description": "Multi-seed LGBM+XGB rank blend",
+        "score": 0.94645,
+        "notes": [
+            "Current best public leaderboard score"
+        ]
+    },
+    {
+        "comp_slug": "playground-series-s6e11",
+        "description": "multi-seed stack (3 seeds, LR meta + hill climb)",
+        "score": 0.94643,
+        "notes": "adding more seeds didnt helped"
+    },
+    {
+        "comp_slug": "playground-series-s6e11",
+        "description": "(3-model stack, LR meta, best C by OOF)",
+        "score": 0.94686,
+        "notes": "current best score as of 14-11-26"
+    }
+]

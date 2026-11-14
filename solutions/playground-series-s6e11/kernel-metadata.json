@@ -1,0 +1,15 @@
+{
+    "id": "rugvedbane/Kwest-playground-series-s6e11",
+    "title": "Kwest-playground-series-s6e11",
+    "code_file": "solution.py",
+    "language": "python",
+    "kernel_type": "script",
+    "is_private": true,
+    "enable_gpu": true,
+    "enable_internet": true,
+    "dataset_sources": [],
+    "competition_sources": [
+        "playground-series-s6e11"
+    ],
+    "kernel_sources": []
+}
