@@ -226,7 +226,7 @@ def run_on_kaggle(code: str) -> str:
                 encoding="utf-8",
                 errors="replace"
             ) as f:
-                content = f.read(5000)
+                content = f.read()
 
             output_text.append(
                 f"\n--- {filename} ---\n{content}"
