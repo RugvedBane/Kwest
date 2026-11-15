@@ -2,13 +2,12 @@ import os
 import json
 from datetime import datetime
 
-def save_experiment(comp_slug, description, score, notes):
-
-    EXPERIMENTS_FILE = os.path.join(
+EXPERIMENTS_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "experiments.json"
-    )
+)
 
+def save_experiment(comp_slug, description, score, notes):
     try:
         with open(EXPERIMENTS_FILE, "r") as f:
             data = json.load(f)
@@ -45,7 +44,6 @@ def get_memory_context(comp_slug):
         description: {exp['description']},
         score: {exp['score']},
         notes: {exp['notes']}
-
         """
     )
     return "\n".join(list_of_string) if list_of_string else "No experiments logged yet."
