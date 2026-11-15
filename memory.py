@@ -30,7 +30,7 @@ def save_experiment(comp_slug, description, score, notes):
 
 def get_memory_context(comp_slug):
     try:
-        with open("EXPERIMENTS_FILE", "r") as f:
+        with open(EXPERIMENTS_FILE, "r") as f:
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):  # json.JSONDecodeError handles empty files and correpted files.
         data = []
