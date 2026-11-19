@@ -16,3 +16,5 @@ test.csv
 
 comp_data/
 solutions/*/output/
+
+.streamlit/secrets.toml
