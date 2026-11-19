@@ -49,7 +49,7 @@ Kwest follows a tool-calling agent architecture. The LLM interprets user request
   'primaryColor': '#E5EEE8',
   'primaryTextColor': '#174D38',
   'primaryBorderColor': '#174D38',
-  'lineColor': '#174D38',
+  'lineColor': '#6B9B7D',
   'secondaryColor': '#EEF3EF',
   'tertiaryColor': '#FFFFFF',
   'clusterBkg': '#F0F5F1',
