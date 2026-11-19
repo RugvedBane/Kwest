@@ -48,7 +48,7 @@ def run_on_kaggle(code: str = None) -> str:
     errors="replace", timeout=60
     )
     pre_text = (pre.stdout + pre.stderr).upper()
-    if pre.returncode == 0 and any(s in pre_text for s in ("QUEUED", "RUNNING", "CANCEL")):
+    if pre.returncode == 0 and any(s in pre_text for s in ("QUEUED", "RUNNING", "CANCELLING")):
         return (
             "Previous version of this kernel is still queued/running/cancelling.\n"
             "Stop that session on kaggle.com first, then rerun."
