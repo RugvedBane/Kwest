@@ -1,4 +1,9 @@
 langchain-core
-langchain-groq
+langchain-openai
+langgraph
 python-dotenv
-kaggle
+kaggle==1.6.17
+scikit-learn
+lightgbm
+pandas
+streamlit
