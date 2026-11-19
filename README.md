@@ -1,13 +1,30 @@
 
-# Kwest
+<p align="center">
+  <img src="assets/Kwest-logo.svg" alt="Kwest Logo" width="200">
+</p>
 
-**A personal AI agent for automating Kaggle competition workflows.**
+<h1 align="center">Kwest</h1>
+
+<p align="center">
+  An AI-powered agent for automating Kaggle competition workflows.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/LangChain-1C3C3C" alt="LangChain">
+  <img src="https://img.shields.io/badge/LangGraph-1C3C3C" alt="LangGraph">
+  <img src="https://img.shields.io/badge/LLM-DeepSeek-167D57" alt="DeepSeek">
+  <img src="https://img.shields.io/badge/Frontend-Streamlit-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit">
+  <img src="https://img.shields.io/badge/Platform-Kaggle-20BEFF?logo=kaggle&logoColor=white" alt="Kaggle">
+</p>
+
+---
+
+## Overview
 
 Kwest is a tool-using AI agent that automates key stages of the Kaggle competition workflow, from inspecting datasets and generating machine learning code to executing training on Kaggle kernels, submitting predictions, and tracking experiments.
 
 Built with Python, LangChain, LangGraph, and DeepSeek, Kwest provides a conversational interface for managing competition experiments without repeatedly handling the same setup and execution steps manually.
-
----
 
 ## Why Kwest?
 
@@ -16,14 +33,11 @@ Iterating on Kaggle competitions involves repeatedly inspecting datasets, writin
 Kwest brings these operations into a single agent-driven workflow.
 
 - **Automated execution:** Generates training code and runs it on Kaggle kernels.
-- **Tool-based interaction:** Uses dedicated tools to inspect data, retrieve competition information, analyze features, execute code, and submit predictions.
-- **Experiment tracking:** Maintains a persistent record of experiment descriptions, scores, and observations.
+- **Tool-based interaction:** Uses dedicated tools for dataset inspection, feature analysis, competition information, execution, and submission.
+- **Experiment tracking:** Maintains persistent records of experiment descriptions, scores, and observations.
 - **Competition isolation:** Maintains separate Kaggle kernels and solution files for each competition.
-- **Human-in-the-loop workflow:** Keeps the user involved in reviewing generated code, evaluating results, and deciding what to experiment with next.
-
-The goal is to reduce repetitive work and make competition iteration more efficient while keeping modeling decisions under the user's control.
-
----
+- **Conversational interface:** Allows users to manage competition workflows through natural-language instructions.
+- **Human oversight:** Keeps the user involved in reviewing generated code, evaluating results, and deciding what to experiment with next.
 
 ## Architecture
 
@@ -31,50 +45,52 @@ Kwest follows a tool-calling agent architecture. The LLM interprets user request
 
 ```mermaid
 flowchart TD
-    U(["User"])
-    UI["Streamlit Frontend"]
+    U(["User"]) <--> UI["Streamlit Frontend"]
 
     subgraph AGENT["Agent Layer"]
-        LG["LangChain + LangGraph<br/>ReAct Agent"]
+        A["LangChain + LangGraph<br/>ReAct Agent"]
         LLM["DeepSeek V4.1 Flash<br/>via Rapid Router"]
         MEM["Experiment Memory<br/>memory.py"]
         DB[("experiments.json")]
+
+        A <--> LLM
+        A <--> MEM
+        MEM <--> DB
     end
 
+    UI <--> A
+
     subgraph TOOLS["Tool Layer · agent_tools.py"]
-        T1["Competition Data Inspection"]
-        T2["Feature Importance Analysis"]
-        T3["Competition Information"]
-        T4["Leaderboard & Submission History"]
-        T5["Current Solution Retrieval"]
-        T6["Kaggle Kernel Execution"]
-        T7["Prediction Submission"]
+        T1["Data Inspection & Feature Analysis"]
+        T2["Competition Info, Leaderboard<br/>& Submission History"]
+        T3["Current Solution Retrieval"]
+        T4["Kaggle Kernel Execution"]
+        T5["Prediction Submission"]
+    end
+
+    A <--> TOOLS
+
+    subgraph LOCAL["Local Storage"]
+        DATA[("Competition Data")]
+        SOL["Competition Solution Files"]
     end
 
     subgraph KAGGLE["Kaggle Infrastructure"]
-        DATA[("Competition Dataset")]
-        KERNEL["Per-Competition Kaggle Kernel"]
+        API["Kaggle CLI"]
+        KERNEL["Per-Competition Kernel"]
         OUTPUT["Kernel Output<br/>submission.csv"]
         BOARD["Competition Leaderboard"]
     end
 
-    U <--> UI
-    UI <--> LG
-    LG <--> LLM
-    LG <--> MEM
-    MEM <--> DB
-    LG <--> TOOLS
-
-    T1 --> DATA
-    T2 --> DATA
-    T6 --> KERNEL
+    T1 <--> DATA
+    T2 <--> BOARD
+    T3 <--> SOL
+    T4 <--> SOL
+    T4 --> API
+    API <--> KERNEL
     KERNEL --> OUTPUT
-    OUTPUT --> T7
-    T7 --> BOARD
-
-    T3 --> BOARD
-    T4 --> BOARD
-    T5 --> KERNEL
+    OUTPUT --> T5
+    T5 --> BOARD
 ```
 
 ### Core Components
@@ -89,12 +105,12 @@ flowchart TD
 
 #### 2. Tool Layer
 
-Implemented in `agent_tools.py`, these tools give the agent access to Kaggle competition operations and local experiment data.
+Implemented in `agent_tools.py`, these tools provide access to Kaggle competition operations and local experiment data.
 
 | Tool | Responsibility |
 |---|---|
 | `inspect_competition_data` | Downloads and profiles competition datasets, including shapes, data types, and missing values. |
-| `analyze_feature_importance` | Performs local LightGBM-based feature analysis using gain importance, correlation, mutual information, and categorical target rates. |
+| `analyze_feature_importance` | Performs LightGBM-based feature analysis using gain importance, correlation, mutual information, and categorical target rates. |
 | `get_competition_info_tool` | Retrieves competition metadata and related information. |
 | `get_leaderboard_tool` | Fetches competition leaderboard information. |
 | `get_submissions_tool` | Retrieves submission history and scores. |
@@ -107,7 +123,7 @@ Implemented in `agent_tools.py`, these tools give the agent access to Kaggle com
 - Uses the Kaggle CLI through Python's `subprocess` module.
 - Generates and pushes Python training scripts as Kaggle kernels.
 - Monitors kernel execution and retrieves relevant logs.
-- Uses a separate kernel for each competition, with dynamically generated kernel identifiers.
+- Maintains a separate kernel for each competition, with dynamically generated kernel identifiers.
 - Stores competition-specific solution files and kernel metadata locally.
 - Retrieves the generated `submission.csv` for submission.
 
@@ -116,9 +132,9 @@ Implemented in `agent_tools.py`, these tools give the agent access to Kaggle com
 Implemented through `memory.py` and `experiments.json`.
 
 - Stores experiment descriptions, scores, and notes.
-- Keeps experiment records scoped to individual competitions.
-- Loads relevant experiment history into the agent's context.
-- Allows the user to log results directly through chat.
+- Maintains experiment history across sessions.
+- Provides relevant experiment context to the agent.
+- Allows users to log results directly through chat.
 
 Example command:
 
@@ -131,14 +147,12 @@ log: LightGBM with interaction features | 0.94706 | Improved public leaderboard 
 The Streamlit interface provides a centralized workspace for interacting with Kwest.
 
 - **Chat:** Conversational interface for requesting competition operations.
-- **Kwest's Code:** Displays the generated solution code and kernel information.
+- **Kwest's Code:** Displays generated solution code and kernel information.
 - **Experiments:** Displays logged experiments, scores, and observations.
 - **Settings:** Manages the selected competition.
 - **About:** Provides project and workflow information.
 
 The interface uses a custom green visual theme aligned with Kwest's branding.
-
----
 
 ## Typical Workflow
 
@@ -149,8 +163,6 @@ The interface uses a custom green visual theme aligned with Kwest's branding.
 5. **Review results:** Inspect the generated solution, kernel status, and execution logs.
 6. **Submit predictions:** Ask Kwest to submit the generated `submission.csv`.
 7. **Track experiments:** Log important runs and compare results over time.
-
----
 
 ## Tech Stack
 
@@ -168,14 +180,15 @@ The interface uses a custom green visual theme aligned with Kwest's branding.
 | Experiment Storage | JSON |
 | Configuration | python-dotenv |
 
----
-
 ## Project Structure
 
 ```text
 Kwest/
 │
 ├── .streamlit/                 # Streamlit configuration and secrets
+│
+├── assets/
+│   └── kwest-logo.svg          # Project logo
 │
 ├── solutions/
 │   └── <competition-slug>/
@@ -194,23 +207,19 @@ Kwest/
 └── streamlit_app.py            # Streamlit frontend
 ```
 
-Competition datasets and generated training artifacts are maintained locally and excluded from version control.
-
----
+Competition datasets are maintained locally, while generated training scripts and kernel metadata are organized by competition.
 
 ## Engineering Decisions
 
 A few implementation decisions were made to improve reliability and keep the architecture manageable.
 
-- **Dedicated competition kernels:** Each competition gets its own kernel instead of sharing a single kernel across unrelated competitions.
+- **Dedicated competition kernels:** Each competition gets its own kernel instead of sharing one across unrelated competitions.
 - **On-demand competition context:** Competition metadata, leaderboard information, and submission history are retrieved through tools rather than loading everything into the agent's initial context.
 - **Controlled tool execution:** Parallel tool calls are disabled to reduce conflicting or duplicated execution requests.
 - **Bounded execution history:** Conversation history and returned kernel logs are limited to prevent unnecessary context growth.
 - **Error handling:** The agent is instructed to report execution failures and timeouts rather than automatically retrying kernel runs.
 - **Existing solution awareness:** The agent can retrieve the current solution before making modifications.
 - **Persistent experiment tracking:** Experiment history is stored locally and remains available across sessions.
-
----
 
 ## Current Status
 
@@ -233,17 +242,18 @@ Kwest has successfully completed the following workflow on the Kaggle Playground
 
 `Dataset Inspection → Model Training → Prediction Generation → Kaggle Submission`
 
-The project achieved a public leaderboard score of **0.94706**, improving on the previous manually achieved score of **0.94579**.
+| Approach | Public Score |
+|---|---:|
+| Previous manual approach | 0.94579 |
+| Kwest-assisted approach | **0.94706** |
+
+Kwest improved the public leaderboard score from 0.94579 to 0.94706 in this competition.
 
 This is an individual competition result, not a claim of consistent leaderboard performance across competitions.
-
----
 
 ## Future Improvements
 
 The current priority is improving the reliability of existing functionality rather than continuously expanding the toolset.
-
-Planned areas of improvement:
 
 - More reliable code generation and modification.
 - Better validation of tool outputs and execution results.
@@ -252,11 +262,3 @@ Planned areas of improvement:
 - Error analysis using out-of-fold predictions.
 - Deployment through Streamlit Community Cloud.
 - Automated code-quality checks through GitHub Actions.
-
----
-
-## About
-
-Kwest is a personal project built to explore practical applications of agentic AI, tool calling, LLM-driven code generation, and automated machine learning workflows.
-
-It is designed around a real Kaggle workflow, with the aim of making experimentation more efficient while retaining user oversight over the modeling process.
