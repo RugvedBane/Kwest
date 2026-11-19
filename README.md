@@ -30,47 +30,51 @@ The goal is to reduce repetitive work and make competition iteration more effici
 Kwest follows a tool-calling agent architecture. The LLM interprets user requests, selects the appropriate tools, and uses their results to formulate responses.
 
 ```mermaid
-
 flowchart TD
-    U(["User"]) <--> UI["Streamlit Frontend"]
+    U(["User"])
+    UI["Streamlit Frontend"]
 
     subgraph AGENT["Agent Layer"]
-        A["LangChain + LangGraph<br/>ReAct Agent"]
+        LG["LangChain + LangGraph<br/>ReAct Agent"]
         LLM["DeepSeek V4.1 Flash<br/>via Rapid Router"]
         MEM["Experiment Memory<br/>memory.py"]
         DB[("experiments.json")]
-
-        A <--> LLM
-        A <--> MEM
-        MEM <--> DB
     end
-
-    UI <--> A
 
     subgraph TOOLS["Tool Layer · agent_tools.py"]
-        T1["Data Inspection & Feature Analysis"]
-        T2["Competition Info, Leaderboard<br/>& Submission History"]
-        T3["Current Solution Retrieval"]
-        T4["Kaggle Kernel Execution"]
-        T5["Prediction Submission"]
+        T1["Competition Data Inspection"]
+        T2["Feature Importance Analysis"]
+        T3["Competition Information"]
+        T4["Leaderboard & Submission History"]
+        T5["Current Solution Retrieval"]
+        T6["Kaggle Kernel Execution"]
+        T7["Prediction Submission"]
     end
 
-    A <--> TOOLS
-
     subgraph KAGGLE["Kaggle Infrastructure"]
-        DATA[("Competition Data")]
-        KERNEL["Per-Competition Kernel"]
+        DATA[("Competition Dataset")]
+        KERNEL["Per-Competition Kaggle Kernel"]
         OUTPUT["Kernel Output<br/>submission.csv"]
         BOARD["Competition Leaderboard"]
     end
 
-    T1 <--> DATA
-    T2 <--> BOARD
-    T3 <--> KERNEL
-    T4 <--> KERNEL
+    U <--> UI
+    UI <--> LG
+    LG <--> LLM
+    LG <--> MEM
+    MEM <--> DB
+    LG <--> TOOLS
+
+    T1 --> DATA
+    T2 --> DATA
+    T6 --> KERNEL
     KERNEL --> OUTPUT
-    OUTPUT --> T5
-    T5 --> BOARD
+    OUTPUT --> T7
+    T7 --> BOARD
+
+    T3 --> BOARD
+    T4 --> BOARD
+    T5 --> KERNEL
 ```
 
 ### Core Components
