@@ -44,6 +44,18 @@ Kwest brings these operations into a single agent-driven workflow.
 Kwest follows a tool-calling agent architecture. The LLM interprets user requests, selects the appropriate tools, and uses their results to formulate responses.
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {
+  'background': '#F7F9F5',
+  'primaryColor': '#E5EEE8',
+  'primaryTextColor': '#174D38',
+  'primaryBorderColor': '#174D38',
+  'lineColor': '#174D38',
+  'secondaryColor': '#EEF3EF',
+  'tertiaryColor': '#FFFFFF',
+  'clusterBkg': '#F0F5F1',
+  'clusterBorder': '#174D38',
+  'edgeLabelBackground': '#F7F9F5'
+}}}%%
 flowchart TD
     U(["User"]) <--> UI["Streamlit Frontend"]
 
