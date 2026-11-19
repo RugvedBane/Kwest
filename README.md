@@ -55,6 +55,8 @@ Kwest follows a tool-calling agent architecture. The LLM interprets user request
   'clusterBkg': '#F0F5F1',
   'clusterBorder': '#174D38',
   'edgeLabelBackground': '#F7F9F5'
+  'fontSize': '16px',
+  'nodePadding': 15,
 }}}%%
 flowchart TD
     U(["User"]) <--> UI["Streamlit Frontend"]
