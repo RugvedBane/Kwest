@@ -8,6 +8,10 @@ import pandas as pd
 import zipfile
 from langchain_core.tools import tool
 from main import get_my_submissions, get_competition_info, get_leaderboard, get_my_submissions
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score 
+from sklearn.feature_selection import mutual_info_classif
+import lightgbm as lgb
 
 COMP_SLUG = ""
 LAST_OUTPUT_FOLDER = ""
@@ -17,11 +21,18 @@ def set_comp_slug(slug: str):
     global COMP_SLUG
     COMP_SLUG = slug
 
+
 @tool
-def run_on_kaggle(code: str) -> str:
+def run_on_kaggle(code: str = None) -> str:
     """
     Pushes code to Kaggle, waits for actual kernel completion,
     downloads fresh outputs and verifies submission.csv.
+
+    Pass code normally to push a new/edited solution.
+    Omit code (call with no argument) to re-push the existing
+    solution.py unchanged — use this after manually cancelling
+    a stuck/queued kernel on kaggle.com and wanting to just retry
+    the same run.
     """
 
     global LAST_OUTPUT_FOLDER
@@ -30,6 +41,18 @@ def run_on_kaggle(code: str) -> str:
 
     kernel_slug = f"Kwest-{COMP_SLUG}"
     base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    pre = subprocess.run(
+    ["kaggle", "kernels", "status", f"rugvedbane/{kernel_slug}"],
+    capture_output=True, text=True, encoding="utf-8",
+    errors="replace", timeout=60
+    )
+    pre_text = (pre.stdout + pre.stderr).upper()
+    if pre.returncode == 0 and any(s in pre_text for s in ("QUEUED", "RUNNING", "CANCEL")):
+        return (
+            "Previous version of this kernel is still queued/running/cancelling.\n"
+            "Stop that session on kaggle.com first, then rerun."
+        )
 
     folder = os.path.join(base_dir, "solutions", COMP_SLUG)
     output_folder = os.path.join(folder, "output")  
@@ -45,8 +68,13 @@ def run_on_kaggle(code: str) -> str:
     # Save generated solution
     code_path = os.path.join(folder, "solution.py")
 
-    with open(code_path, "w", encoding="utf-8") as f:
-        f.write(code)
+    if code is not None:
+        with open(code_path, "w", encoding="utf-8") as f:
+            f.write(code)
+    else:
+        if not os.path.isfile(code_path):
+            return "No existing solution.py found to rerun — provide code."
+        print("No code provided — re-pushing existing solution.py as-is.")
 
     # Kernel metadata
     
@@ -87,52 +115,48 @@ def run_on_kaggle(code: str) -> str:
 
     print("Kernel pushed successfully. Monitoring execution...")
 
-    # Wait for actual execution status
+    print("Kernel pushed. Waiting 30s for status to refresh...")
+    time.sleep(30)
+
     start_time = time.time()
     timeout = 2700
     poll_interval = 15
-
+    queue_limit = 150  
     terminal_status = None
-    last_status = ""
+    running_seen = False
 
     while time.time() - start_time < timeout:
-
         status_result = subprocess.run(
             ["kaggle", "kernels", "status", kernel_slug],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=60
         )
-
         if status_result.returncode != 0:
-            return (
-                "Unable to retrieve Kaggle kernel status.\n"
-                f"{status_result.stderr}"
-            )
+            return f"Unable to retrieve Kaggle kernel status.\n{status_result.stderr}"
 
-        status_text = (
-            status_result.stdout + "\n" + status_result.stderr
-        ).strip()
-
-        if status_text != last_status:
-            print("Kernel status:", status_text)
-            last_status = status_text
-
+        status_text = (status_result.stdout + "\n" + status_result.stderr).strip()
         status_upper = status_text.upper()
+        elapsed_now = int(time.time() - start_time)
+
+        status_line = next((l for l in status_text.splitlines() if "has status" in l), status_text)
+        print(f"[{elapsed_now}s] {status_line}") 
+
+        if "RUNNING" in status_upper:
+            running_seen = True
 
         if "COMPLETE" in status_upper:
-            terminal_status = "COMPLETE"
-            break
-
+            terminal_status = "COMPLETE"; break
         if "ERROR" in status_upper:
-            terminal_status = "ERROR"
-            break
-
+            terminal_status = "ERROR"; break
         if "CANCEL" in status_upper:
-            terminal_status = "CANCELLED"
-            break
+            terminal_status = "CANCELLED"; break
+
+        if not running_seen and elapsed_now > queue_limit:
+            return (
+                f"KERNEL STUCK IN QUEUE for {elapsed_now}s and never started.\n"
+                "Cancel it on kaggle.com (stop the session), then ask me to "
+                "rerun with no code to re-push the same solution."
+            )
 
         time.sleep(poll_interval)
 
@@ -366,3 +390,125 @@ def get_current_solution() -> str:
 
     with open(solution_path, "r", encoding='utf-8') as f:
         return f.read()
+
+def detect_target_column() -> str:
+    """
+    Auto-detects the target column: the column present in train.csv but
+    absent from test.csv. Falls back to sample_submission.csv's non-id
+    column if train/test diff doesn't resolve to exactly one column.
+    Internal helper — not exposed to the agent as a tool.
+    """
+    train_path = os.path.join(DATA_FOLDER, "train.csv")
+    test_path = os.path.join(DATA_FOLDER, "test.csv")
+    sample_path = os.path.join(DATA_FOLDER, "sample_submission.csv")
+
+    train_cols = set(pd.read_csv(train_path, nrows=0).columns)
+    diff = set()
+
+    if os.path.exists(test_path):
+        test_cols = set(pd.read_csv(test_path, nrows=0).columns)
+        diff = train_cols - test_cols
+        if len(diff) == 1:
+            return diff.pop()
+
+    if os.path.exists(sample_path):
+        sample_cols = list(pd.read_csv(sample_path, nrows=0).columns)
+        candidates = [c for c in sample_cols if c in train_cols and c.lower() != "id"]
+        if len(candidates) == 1:
+            return candidates[0]
+
+    raise ValueError(
+        "Could not auto-detect target column — train/test diff and "
+        f"sample_submission.csv didn't agree. Diff candidates: {diff}"
+    )
+
+@tool
+def analyze_feature_importance() -> str:
+    """
+    Runs a quick analysis of which features actually relate to the target:
+    LightGBM feature importance, numeric correlation with target, mutual
+    information (captures nonlinear relationships), and target rate by
+    category for top categorical columns. Meant for guiding feature
+    engineering / ablation decisions, not for the final model.
+    Call inspect_competition_data first if comp_data hasn't been downloaded yet.
+    """
+
+    csv_path = os.path.join(DATA_FOLDER, "train.csv")
+
+    if not os.path.exists(csv_path):
+        return "train.csv not found locally — run inspect_competition_data first."
+
+    try:
+        target_col = detect_target_column()
+    except ValueError as e:
+        return str(e)
+
+    df = pd.read_csv(csv_path)
+
+    if target_col not in df.columns:
+        return f"Detected target '{target_col}' not actually in train.csv columns: {list(df.columns)}"
+
+    y = df[target_col]
+    X = df.drop(columns=[target_col])
+
+    cat_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
+    num_cols = X.select_dtypes(include=['number']).columns.tolist()
+
+    drop_cols = [target_col]
+    if 'id' in X.columns:
+        X = X.drop(columns=['id'])
+
+    X_enc = X.copy()
+    for col in cat_cols:
+        X_enc[col] = X_enc[col].astype('category').cat.codes
+
+    sample_size = min(150_000, len(X_enc))
+    sample_idx = X_enc.sample(sample_size, random_state=42).index
+    X_sample, y_sample = X_enc.loc[sample_idx], y.loc[sample_idx]
+
+    X_train, X_valid, y_train, y_valid = train_test_split(
+        X_sample, y_sample, test_size=0.2, stratify=y_sample, random_state=42
+    )
+
+    model = lgb.LGBMClassifier(
+        n_estimators=200,
+        num_leaves=63,
+        learning_rate=0.05,
+        random_state=42,
+        verbosity=-1
+    )
+    model.fit(
+        X_train, y_train,
+        eval_set=[(X_valid, y_valid)],
+        callbacks=[lgb.early_stopping(20, verbose=False)]
+    )
+
+    importances = pd.Series(
+        model.booster_.feature_importance(importance_type='gain'),
+        index=X_enc.columns
+    ).sort_values(ascending=False)
+
+    result = f"QUICK MODEL VALID AUC: {roc_auc_score(y_valid, model.predict_proba(X_valid)[:, 1]):.5f}\n"
+    result += "(sampled model for ranking only — not representative of final score)\n\n"
+
+    result += "=== FEATURE IMPORTANCE (gain, top 20) ===\n"
+    result += importances.head(20).to_string() + "\n\n"
+
+    if num_cols:
+        corr = df[num_cols + [target_col]].corr()[target_col].drop(target_col).sort_values(key=abs, ascending=False)
+        result += "=== NUMERIC CORRELATION WITH TARGET (top 15 by |corr|) ===\n"
+        result += corr.head(15).to_string() + "\n\n"
+
+    mi = mutual_info_classif(X_sample, y_sample, discrete_features=[c in cat_cols for c in X_enc.columns], random_state=42)
+    mi_series = pd.Series(mi, index=X_enc.columns).sort_values(ascending=False)
+    result += "=== MUTUAL INFORMATION WITH TARGET (top 15) ===\n"
+    result += mi_series.head(15).to_string() + "\n\n"
+
+    if cat_cols:
+        result += "=== TARGET RATE BY CATEGORY (top 5 categorical cols by MI) ===\n"
+        top_cats = [c for c in mi_series.index if c in cat_cols][:5]
+        for col in top_cats:
+            rates = df.groupby(col)[target_col].mean().sort_values(ascending=False)
+            result += f"\n{col}:\n{rates.head(10).to_string()}\n"
+
+    return result[:8000]
