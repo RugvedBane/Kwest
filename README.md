@@ -1,4 +1,3 @@
-
 <p align="center">
   <img src="assets/Kwest-logo.svg" alt="Kwest Logo" width="200">
 </p>
@@ -24,7 +23,11 @@
 
 Kwest is a tool-using AI agent that automates key stages of the Kaggle competition workflow, from inspecting datasets and generating machine learning code to executing training on Kaggle kernels, submitting predictions, and tracking experiments.
 
-Built with Python, LangChain, LangGraph, and DeepSeek, Kwest provides a conversational interface for managing competition experiments without repeatedly handling the same setup and execution steps manually.
+Built with Python, LangChain, LangGraph, and DeepSeek V4.1 Flash 1017, Kwest provides a conversational interface for managing competition experiments without repeatedly handling the same setup and execution steps manually.
+
+<!-- Add a screenshot or GIF of the UI here, for example:
+<p align="center"><img src="assets/screenshot.png" alt="Kwest UI" width="800"></p>
+-->
 
 ## Why Kwest?
 
@@ -41,7 +44,7 @@ Kwest brings these operations into a single agent-driven workflow.
 
 ## Architecture
 
-Kwest follows a tool-calling agent architecture. The LLM interprets user requests, selects the appropriate tools, and uses their results to formulate responses.
+Kwest follows a tool-calling agent architecture. The LLM interprets user requests, selects the appropriate tools, and uses their results to formulate responses. All Kaggle operations go through the Kaggle CLI, and kernel outputs are downloaded locally before submission.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {
@@ -54,16 +57,15 @@ Kwest follows a tool-calling agent architecture. The LLM interprets user request
   'tertiaryColor': '#FFFFFF',
   'clusterBkg': '#F0F5F1',
   'clusterBorder': '#174D38',
-  'edgeLabelBackground': '#F7F9F5'
-  'fontSize': '16px',
-  'nodePadding': 15,
+  'edgeLabelBackground': '#F7F9F5',
+  'fontSize': '16px'
 }}}%%
 flowchart TD
-    U(["User"]) <--> UI["Streamlit Frontend"]
+    U(["User"]) <--> UI["Streamlit Frontend<br/>streamlit_app.py"]
 
-    subgraph AGENT["Agent Layer"]
-        A["LangChain + LangGraph<br/>ReAct Agent"]
-        LLM["DeepSeek V4.1 Flash<br/>via Rapid Router"]
+    subgraph AGENT["Agent Layer: Kwest.py"]
+        A["LangGraph ReAct Agent<br/>create_react_agent"]
+        LLM["DeepSeek V4.1 Flash 1017<br/>via Rapid Router"]
         MEM["Experiment Memory<br/>memory.py"]
         DB[("experiments.json")]
 
@@ -74,37 +76,42 @@ flowchart TD
 
     UI <--> A
 
-    subgraph TOOLS["Tool Layer · agent_tools.py"]
-        T1["Data Inspection & Feature Analysis"]
-        T2["Competition Info, Leaderboard<br/>& Submission History"]
+    subgraph TOOLS["Tool Layer: agent_tools.py"]
+        T1["Data Inspection<br/>and Feature Analysis"]
+        T2["Competition Info, Leaderboard<br/>and Submission History"]
         T3["Current Solution Retrieval"]
-        T4["Kaggle Kernel Execution"]
-        T5["Prediction Submission"]
+        T4["Kernel Execution<br/>run_on_kaggle"]
+        T5["Prediction Submission<br/>submit_to_competition"]
     end
 
     A <--> TOOLS
 
+    CLI["Kaggle CLI<br/>main.py via subprocess"]
+
     subgraph LOCAL["Local Storage"]
-        DATA[("Competition Data")]
-        SOL["Competition Solution Files"]
+        DATA[("comp_data/competition-slug")]
+        SOL["solutions/competition-slug<br/>solution.py + kernel-metadata.json"]
+        OUT["solutions/competition-slug/output<br/>submission.csv"]
     end
 
-    subgraph KAGGLE["Kaggle Infrastructure"]
-        API["Kaggle CLI"]
+    subgraph KAGGLE["Kaggle"]
         KERNEL["Per-Competition Kernel"]
-        OUTPUT["Kernel Output<br/>submission.csv"]
-        BOARD["Competition Leaderboard"]
+        BOARD["Competition + Leaderboard"]
     end
 
     T1 <--> DATA
-    T2 <--> BOARD
-    T3 <--> SOL
-    T4 <--> SOL
-    T4 --> API
-    API <--> KERNEL
-    KERNEL --> OUTPUT
-    OUTPUT --> T5
-    T5 --> BOARD
+    T1 --> CLI
+    T2 --> CLI
+    T3 --> SOL
+    T4 --> SOL
+    T4 --> CLI
+    T5 --> OUT
+    T5 --> CLI
+
+    CLI --> DATA
+    CLI <--> KERNEL
+    KERNEL --> OUT
+    CLI <--> BOARD
 ```
 
 ### Core Components
@@ -112,7 +119,7 @@ flowchart TD
 #### 1. Agent and Reasoning Layer
 
 - Built using LangChain and LangGraph's `create_react_agent`.
-- Uses DeepSeek V4.1 Flash through Rapid Router as the LLM.
+- Uses DeepSeek V4.1 Flash 1017 through Rapid Router (an OpenAI-compatible LLM router) as the LLM.
 - Interprets natural-language requests and selects tools based on their descriptions and system instructions.
 - Uses controlled tool execution to avoid unnecessary parallel calls and repeated kernel submissions.
 - Maintains a limited conversation history to provide context across interactions.
@@ -139,7 +146,7 @@ Implemented in `agent_tools.py`, these tools provide access to Kaggle competitio
 - Monitors kernel execution and retrieves relevant logs.
 - Maintains a separate kernel for each competition, with dynamically generated kernel identifiers.
 - Stores competition-specific solution files and kernel metadata locally.
-- Retrieves the generated `submission.csv` for submission.
+- Downloads the generated `submission.csv` locally before submission.
 
 #### 4. Experiment Memory
 
@@ -184,12 +191,12 @@ The interface uses a custom green visual theme aligned with Kwest's branding.
 |---|---|
 | Language | Python |
 | Agent Framework | LangChain, LangGraph |
-| LLM | DeepSeek V4.1 Flash |
+| LLM | DeepSeek V4.1 Flash 1017 |
 | LLM Provider | Rapid Router |
 | Tool Execution | LangChain Tools, Python subprocess |
-| Kaggle Integration | Kaggle API, Kaggle CLI |
-| Machine Learning | LightGBM, XGBoost, CatBoost |
-| Data Analysis | Pandas, NumPy, scikit-learn |
+| Kaggle Integration | Kaggle CLI |
+| Local Analysis | LightGBM, scikit-learn, Pandas, NumPy |
+| Generated Solutions (run on Kaggle) | LightGBM, XGBoost, CatBoost |
 | Frontend | Streamlit |
 | Experiment Storage | JSON |
 | Configuration | python-dotenv |
@@ -199,16 +206,18 @@ The interface uses a custom green visual theme aligned with Kwest's branding.
 ```text
 Kwest/
 │
-├── .streamlit/                 # Streamlit configuration and secrets
+├── .streamlit/                 # Streamlit configuration and secrets (secrets git-ignored)
 │
 ├── assets/
 │   └── kwest-logo.svg          # Project logo
+│
+├── comp_data/                  # Downloaded competition data (git-ignored)
 │
 ├── solutions/
 │   └── <competition-slug>/
 │       ├── solution.py         # Competition training script
 │       ├── kernel-metadata.json
-│       └── output/             # Generated kernel outputs
+│       └── output/             # Generated kernel outputs (git-ignored)
 │
 ├── .gitignore
 ├── Kwest.py                    # Agent construction and system instructions
@@ -220,8 +229,6 @@ Kwest/
 ├── requirements.txt
 └── streamlit_app.py            # Streamlit frontend
 ```
-
-Competition datasets are maintained locally, while generated training scripts and kernel metadata are organized by competition.
 
 ## Engineering Decisions
 
@@ -237,7 +244,7 @@ A few implementation decisions were made to improve reliability and keep the arc
 
 ## Current Status
 
-**Functional prototype under active development.**
+**Functional prototype under active development.** Kwest works end to end, but it is not yet fully reliable. Generated code and kernel results should always be reviewed by the user.
 
 Implemented and tested:
 
@@ -250,20 +257,18 @@ Implemented and tested:
 - Persistent experiment logging and retrieval.
 - Streamlit-based conversational frontend.
 
-### End-to-End Results
+### End-to-End Validation
 
-Kwest has successfully completed the following workflow on the Kaggle Playground Series S6E11 competition:
+Kwest completed the following workflow on the Kaggle Playground Series S6E11 competition:
 
-`Dataset Inspection → Model Training → Prediction Generation → Kaggle Submission`
+`Dataset Inspection → Feature Analysis → Model Training → Prediction Generation → Kaggle Submission`
 
 | Approach | Public Score |
 |---|---:|
 | Previous manual approach | 0.94579 |
-| Kwest-assisted approach | **0.94706** |
+| Kwest-assisted approach | 0.94706 |
 
-Kwest improved the public leaderboard score from 0.94579 to 0.94706 in this competition.
-
-This is an individual competition result, not a claim of consistent leaderboard performance across competitions.
+This run validates the pipeline end to end and improved on the manual baseline by a small margin. It is a single-competition result, not a claim of consistent leaderboard performance across competitions.
 
 ## Future Improvements
 
