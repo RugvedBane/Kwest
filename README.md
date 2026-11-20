@@ -46,80 +46,16 @@ Kwest brings these operations into a single agent-driven workflow.
 
 Kwest follows a tool-calling agent architecture. The LLM interprets user requests, selects the appropriate tools, and uses their results to formulate responses. All Kaggle operations go through the Kaggle CLI, and kernel outputs are downloaded locally before submission.
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {
-  'background': '#F7F9F5',
-  'primaryColor': '#E5EEE8',
-  'primaryTextColor': '#174D38',
-  'primaryBorderColor': '#174D38',
-  'lineColor': '#6B9B7D',
-  'secondaryColor': '#EEF3EF',
-  'tertiaryColor': '#FFFFFF',
-  'clusterBkg': '#F0F5F1',
-  'clusterBorder': '#174D38',
-  'edgeLabelBackground': '#F7F9F5',
-  'fontSize': '16px'
-}}}%%
-flowchart TD
-    U(["User"]) <--> UI["Streamlit Frontend<br/>streamlit_app.py"]
-
-    subgraph AGENT["Agent Layer: Kwest.py"]
-        A["LangGraph ReAct Agent<br/>create_react_agent"]
-        LLM["DeepSeek V4.1 Flash 1017<br/>via Rapid Router"]
-        MEM["Experiment Memory<br/>memory.py"]
-        DB[("experiments.json")]
-
-        A <--> LLM
-        A <--> MEM
-        MEM <--> DB
-    end
-
-    UI <--> A
-
-    subgraph TOOLS["Tool Layer: agent_tools.py"]
-        T1["Data Inspection<br/>and Feature Analysis"]
-        T2["Competition Info, Leaderboard<br/>and Submission History"]
-        T3["Current Solution Retrieval"]
-        T4["Kernel Execution<br/>run_on_kaggle"]
-        T5["Prediction Submission<br/>submit_to_competition"]
-    end
-
-    A <--> TOOLS
-
-    CLI["Kaggle CLI<br/>main.py via subprocess"]
-
-    subgraph LOCAL["Local Storage"]
-        DATA[("comp_data/competition-slug")]
-        SOL["solutions/competition-slug<br/>solution.py + kernel-metadata.json"]
-        OUT["solutions/competition-slug/output<br/>submission.csv"]
-    end
-
-    subgraph KAGGLE["Kaggle"]
-        KERNEL["Per-Competition Kernel"]
-        BOARD["Competition + Leaderboard"]
-    end
-
-    T1 <--> DATA
-    T1 --> CLI
-    T2 --> CLI
-    T3 --> SOL
-    T4 --> SOL
-    T4 --> CLI
-    T5 --> OUT
-    T5 --> CLI
-
-    CLI --> DATA
-    CLI <--> KERNEL
-    KERNEL --> OUT
-    CLI <--> BOARD
-```
+<p align="center">
+  <img src="assets/Kwest-architecture.svg" alt="Kwest architecture diagram" width="640">
+</p>
 
 ### Core Components
 
 #### 1. Agent and Reasoning Layer
 
 - Built using LangChain and LangGraph's `create_react_agent`.
-- Uses DeepSeek V4.1 Flash 1017 through Rapid Router (an OpenAI-compatible LLM router) as the LLM.
+- Uses DeepSeek V4.1 Flash 1017 as the LLM.
 - Interprets natural-language requests and selects tools based on their descriptions and system instructions.
 - Uses controlled tool execution to avoid unnecessary parallel calls and repeated kernel submissions.
 - Maintains a limited conversation history to provide context across interactions.
@@ -192,7 +128,6 @@ The interface uses a custom green visual theme aligned with Kwest's branding.
 | Language | Python |
 | Agent Framework | LangChain, LangGraph |
 | LLM | DeepSeek V4.1 Flash 1017 |
-| LLM Provider | Rapid Router |
 | Tool Execution | LangChain Tools, Python subprocess |
 | Kaggle Integration | Kaggle CLI |
 | Local Analysis | LightGBM, scikit-learn, Pandas, NumPy |
