@@ -26,5 +26,29 @@
         "description": "(3-model stack, LR meta, best C by OOF)",
         "score": 0.94686,
         "notes": "current best score as of 14-11-26"
+    },
+    {
+        "comp_slug": "playground-series-s6e11",
+        "description": "Feature-group ablation \u2014 single LGBM (5-fold, no seed ensemble), leave-one-group-out",
+        "score": 0.944816,
+        "notes": "Baseline (all 53 features): OOF AUC = 0.944816\nAblation method: single LightGBM, 5-fold StratifiedKFold, GPU, early stopping \u2014 no seed averaging (clean signal)\nFeature groups tested: RAW (18 cols), AMT_DIGIT (16 amount digit/rounding), plus derived groups\nLeave-one-group-out to measure each group's contribution (\u0394 AUC when dropped)\nPurpose: identify which feature groups help most / don't help / hurt, to drop harmful ones and replace with new features\n[Fill in per-group \u0394 AUC from the ablation table \u2014 most-helpful, neutral, and hurting groups]"
+    },
+    {
+        "comp_slug": "playground-series-s6e11",
+        "description": "single-seed LGBM+XGB rank blend, +TRIPLE_TE, dropped AMT_RAW/TIME (35 feats)",
+        "score": 0.94583,
+        "notes": "Single seed, 5-fold; OOF blend 0.945029; dropped 11 AMT_RAW/TIME cols, kept DIGIT + TRIPLE_TE"
+    },
+    {
+        "comp_slug": "playground-series-s6e11",
+        "description": "Per-feature ablation \u2014 BASE_ONLY (34 feats) vs +1 new feature each (12 candidates), single LGBM 5-fold low-params",
+        "score": "0.945970",
+        "notes": "BASE_ONLY = 0.945699\nHelped: amt_last_digit +0.000271 (best), has_disputes +0.000134, card_age_ratio +0.000097, cvv_x_dist +0.000089, dist_x_risk +0.000032, dist_per_hour +0.000029, amt_per_balance +0.000014, is_night +0.000002\nHurt: txn24_per_hour -0.000043, amt_over_bal -0.000064, amt_is_round -0.000089, risk_flag_x_risk -0.000097\nTOP3 combo (amt_last_digit+has_disputes+card_age_ratio) = 0.945777, delta +0.000078 \u2014 worse than amt_last_digit alone\nTakeaway: only amt_last_digit is a real standalone win; combos don't stack (redundancy). Add amt_last_digit to BASE, drop the rest."
+    },
+    {
+        "comp_slug": "playground-series-s6e11",
+        "description": "LGBM+XGB rank blend + 5 numeric combo features, CPU",
+        "score": "0.94722",
+        "notes": "public LB best."
     }
 ]
