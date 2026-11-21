@@ -308,6 +308,12 @@ CSS = """
 .kw-kernel-inline.error .kw-dot { background: var(--red); }
 .kw-kernel-inline.info .kw-dot { background: #8AA395; }
 
+/* Live tool status shown under the thinking dots while Kwest is working */
+.kw-live-row { margin: 0; }
+.kw-live-row .kw-kernel-inline { margin: 2px 0 4px 0; }
+.kw-kernel-inline.live .kw-dot { animation: kw-pulse 1.2s infinite ease-in-out; }
+@media (prefers-reduced-motion: reduce) { .kw-kernel-inline.live .kw-dot { animation: none; } }
+
 /* Narrow screens */
 @media (max-width: 640px) {
     [data-testid="stMainBlockContainer"] { padding-left: 1rem; padding-right: 1rem; }
@@ -395,6 +401,32 @@ def _parse_kernel_status(text: str):
     return None, None
 
 
+# Friendly labels for the live status pill shown while a tool is running.
+TOOL_LABELS = {
+    "inspect_competition_data": "Inspecting competition data",
+    "analyze_feature_importance": "Analyzing feature importance",
+    "get_current_solution": "Reading current solution",
+    "run_on_kaggle": "Running on Kaggle · this can take a few minutes",
+    "submit_to_competition": "Submitting to Kaggle",
+    "get_competition_info_tool": "Fetching competition info",
+    "get_leaderboard_tool": "Fetching leaderboard",
+    "get_submissions_tool": "Fetching submissions",
+}
+
+
+def _live_html(tool_name=None) -> str:
+    """Three thinking dots, plus a pulsing status pill when a tool is running."""
+    dots = '<div class="kw-thinking"><i></i><i></i><i></i></div>'
+    if not tool_name:
+        return dots
+    label = TOOL_LABELS.get(tool_name, tool_name)
+    pill = (
+        '<div class="kw-live-row"><div class="kw-kernel-inline warning live">'
+        f'<span class="kw-dot"></span>{html.escape(label)}…</div></div>'
+    )
+    return dots + pill
+
+
 def _handle_log(prompt: str) -> str:
     slug = st.session_state.comp_slug
     if not slug:
@@ -418,7 +450,7 @@ def _handle_log(prompt: str) -> str:
     )
 
 
-def _invoke_agent(prompt: str) -> str:
+def _invoke_agent(prompt: str, on_tool=None) -> str:
     if st.session_state.agent is None:
         st.session_state.agent = _build_agent(st.session_state.comp_slug)
 
@@ -426,17 +458,36 @@ def _invoke_agent(prompt: str) -> str:
     st.session_state.kernel_status = "No kernel status in this response"
     st.session_state.kernel_status_type = "info"
 
-    result = st.session_state.agent.invoke(
-        {"messages": st.session_state.chat_history + [("human", prompt)]}
-    )
-    result_messages = result.get("messages", [])
-    response = _content_as_text(result_messages[-1].content) if result_messages else ""
+    # Stream the agent step by step instead of blocking on invoke(), so the UI can
+    # show which tool is running. on_tool(name) is called when a tool starts, and
+    # on_tool(None) when it finishes (back to just the thinking dots).
+    new_messages = []
+    for update in st.session_state.agent.stream(
+        {"messages": st.session_state.chat_history + [("human", prompt)]},
+        stream_mode="updates",
+    ):
+        for node_output in update.values():
+            if not node_output:
+                continue
+            for message in node_output.get("messages", []):
+                new_messages.append(message)
+                if on_tool is None:
+                    continue
+                kind = getattr(message, "type", "")
+                if kind == "ai":
+                    for call in getattr(message, "tool_calls", None) or []:
+                        on_tool(call.get("name"))
+                elif kind == "tool":
+                    on_tool(None)
+
+    ai_messages = [m for m in new_messages if getattr(m, "type", "") == "ai"]
+    response = _content_as_text(ai_messages[-1].content) if ai_messages else ""
 
     # Tool execution details usually live in intermediate ToolMessages, not the final
-    # assistant response. Inspect every returned message to find Kaggle's status text.
+    # assistant response. Inspect every message from this turn to find Kaggle's status text.
     execution_trace = "\n".join(
         _content_as_text(getattr(message, "content", ""))
-        for message in result_messages
+        for message in new_messages
     )
     label, kind = _parse_kernel_status(execution_trace + "\n" + response)
     if label:
@@ -446,7 +497,19 @@ def _invoke_agent(prompt: str) -> str:
     from langchain_core.messages import AIMessage, HumanMessage
 
     st.session_state.chat_history.append(HumanMessage(content=prompt))
-    st.session_state.chat_history.append(AIMessage(content=response[:400]))
+    tools_used = [getattr(m, "name", "tool") for m in new_messages if getattr(m, "type", "") == "tool"]
+    facts = []
+    if tools_used:
+        facts.append("tools run: " + ", ".join(tools_used))
+    if label:
+        facts.append(f"kernel status: {label}")
+    sub = BASE_DIR / "solutions" / st.session_state.comp_slug / "output" / "submission.csv"
+    if sub.exists():
+        facts.append("submission.csv exists on disk")
+    history_text = response[:400]
+    if facts:
+        history_text += "\n[verified by app: " + "; ".join(facts) + "]"
+    st.session_state.chat_history.append(AIMessage(content=history_text))
     st.session_state.chat_history = st.session_state.chat_history[-6:]
 
     new_code = _read_solution()
@@ -456,12 +519,12 @@ def _invoke_agent(prompt: str) -> str:
     return response
 
 
-def _dispatch(prompt: str) -> str:
+def _dispatch(prompt: str, on_tool=None) -> str:
     if prompt.strip().lower().startswith("log:"):
         return _handle_log(prompt.strip())
     if not st.session_state.comp_slug:
         return "Set a competition slug in Settings first."
-    return _invoke_agent(prompt)
+    return _invoke_agent(prompt, on_tool)
 
 
 def _page_header(title: str, subtitle: str = ""):
@@ -553,12 +616,16 @@ if page == "Chat":
                     unsafe_allow_html=True,
                 )
 
+    # While a reply is being computed: Kwest header + a placeholder that always shows
+    # the three thinking dots, and adds a live status pill when a tool is running.
+    status_slot = None
     if st.session_state.pending_prompt:
         st.markdown(
-            f'<div class="kw-who">{LOGO_MARK.format(s=24, c="#1F6B4A")}<span class="kw-who-label">Kwest</span></div>'
-            '<div class="kw-thinking"><i></i><i></i><i></i></div>',
+            f'<div class="kw-who">{LOGO_MARK.format(s=24, c="#1F6B4A")}<span class="kw-who-label">Kwest</span></div>',
             unsafe_allow_html=True,
         )
+        status_slot = st.empty()
+        status_slot.markdown(_live_html(), unsafe_allow_html=True)
 
     if prompt := st.chat_input("Message Kwest"):
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -568,8 +635,13 @@ if page == "Chat":
     # second pass: the user message and thinking dots are on screen, now compute the reply
     if st.session_state.pending_prompt:
         pending = st.session_state.pending_prompt
+
+        def _on_tool(tool_name):
+            if status_slot is not None:
+                status_slot.markdown(_live_html(tool_name), unsafe_allow_html=True)
+
         try:
-            reply = _dispatch(pending)
+            reply = _dispatch(pending, _on_tool)
         except Exception as e:
             reply = f"Error: {e}"
         assistant_message = {"role": "assistant", "content": reply}
