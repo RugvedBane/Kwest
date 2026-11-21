@@ -216,3 +216,7 @@ The current priority is improving the reliability of existing functionality rath
 - Error analysis using out-of-fold predictions.
 - Deployment through Streamlit Community Cloud.
 - Automated code-quality checks through GitHub Actions.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
