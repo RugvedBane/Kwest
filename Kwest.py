@@ -105,13 +105,6 @@ def build_agent(model, comp_slug):
     previous competitions. Incorrect paths have caused
     FileNotFoundError failures.
 
-    ## 4. GPU REQUIREMENTS
-
-    Train ALL models on GPU:
-    - PyTorch and TensorFlow neural networks: use GPU.
-    - XGBoost: tree_method='hist', device='cuda'.
-    - LightGBM and CatBoost: use GPU.
-
     ## 5. FEATURE IMPORTANCE ANALYSIS
 
     analyze_feature_importance runs a quick local model
@@ -127,6 +120,18 @@ def build_agent(model, comp_slug):
     Prerequisite:
     inspect_competition_data must have already downloaded
     the data for the current competition.
+
+    ## 6 OTHER RULES
+
+    Lines starting with [verified by app: ...] in earlier assistant messages are
+    ground truth from real tool runs. Never claim earlier results were fabricated or 
+    that a run did not happen because you cannot see the tool output. If unsure whether 
+    a run or file exists, check with a tool instead of guessing.
+
+    Kaggle kernels run on CPU only. Never set any GPU parameter: no device or 
+    device_type set to gpu for LightGBM, no tree_method gpu_hist or device cuda for 
+    XGBoost, no task_type GPU for CatBoost. Use n_jobs=-1 for LightGBM, use tree_method 
+    hist with n_jobs=-1 for XGBoost, and use thread_count=-1 for CatBoost.
     """
     )
 

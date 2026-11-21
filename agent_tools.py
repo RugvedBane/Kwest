@@ -40,12 +40,14 @@ def run_on_kaggle(code: str = None) -> str:
     LAST_OUTPUT_FOLDER = ""
 
     kernel_slug = f"Kwest-{COMP_SLUG}"
+    kernel_ref = f"rugvedbane/{kernel_slug}"
+
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
     pre = subprocess.run(
-    ["kaggle", "kernels", "status", f"rugvedbane/{kernel_slug}"],
+    ["kaggle", "kernels", "status", kernel_ref],
     capture_output=True, text=True, encoding="utf-8",
-    errors="replace", timeout=60
+    errors="replace", timeout=120
     )
     pre_text = (pre.stdout + pre.stderr).upper()
     if pre.returncode == 0 and any(s in pre_text for s in ("QUEUED", "RUNNING", "CANCELLING")):
@@ -85,7 +87,7 @@ def run_on_kaggle(code: str = None) -> str:
         "language": "python",
         "kernel_type": "script",
         "is_private": True,
-        "enable_gpu": True,
+        "enable_gpu": False,
         "enable_internet": True,
         "dataset_sources": [],
         "competition_sources": [COMP_SLUG],
@@ -182,7 +184,7 @@ def run_on_kaggle(code: str = None) -> str:
     output_result = subprocess.run(
         [
             "kaggle", "kernels", "output",
-            kernel_slug,
+            kernel_ref,
             "-p", output_folder
         ],
         capture_output=True,
@@ -208,7 +210,6 @@ def run_on_kaggle(code: str = None) -> str:
 
     LAST_OUTPUT_FOLDER = output_folder
 
-    # Verify submission
     submission_path = os.path.join(
         output_folder, "submission.csv"
     )
@@ -225,7 +226,6 @@ def run_on_kaggle(code: str = None) -> str:
     else:
         submission_status = "submission.csv NOT FOUND."
 
-    # Return useful logs without loading entire CSV files
     output_text = []
 
     for filename in files:
@@ -269,29 +269,93 @@ def run_on_kaggle(code: str = None) -> str:
 @tool
 def submit_to_competition(message: str) -> str:
     """
-    Submits submission.csv from the last kernel output to the current competition.
-    message: short description of this submission.
+    Validates submission.csv against the competition's sample_submission.csv
+    and submits it to the current Kaggle competition after user approval.
     """
-    submission_path = os.path.join(LAST_OUTPUT_FOLDER, 'submission.csv')
+    folder = os.path.dirname(os.path.abspath(__file__))
 
-    if not os.path.exists(submission_path):
-        return f"No submission.csv found in last kernel output folder: {LAST_OUTPUT_FOLDER}"
-    
-    result = subprocess.run(
-        ['kaggle', 'competitions', 'submit', 
-         '-c', COMP_SLUG, 
-         '-f', submission_path, 
-         '-m', message],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace'
+    output_folder = os.path.join(
+        folder, "solutions", COMP_SLUG, "output"
     )
 
-    if result.returncode != 0:
-        return f"submission failed {result.stderr}"
+    submission_path = os.path.join(
+        output_folder, "submission.csv"
+    )
 
-    return f"submitted sucessfully: {result.stdout}"
+    sample_path = os.path.join(
+        folder, "comp_data", COMP_SLUG, "sample_submission.csv"
+    )
+
+    if not os.path.isfile(submission_path):
+        return f"SUBMISSION FAILED: submission.csv not found at {submission_path}"
+
+    if not os.path.isfile(sample_path):
+        return f"SUBMISSION FAILED: sample_submission.csv not found at {sample_path}"
+
+    if os.path.getsize(submission_path) == 0:
+        return "SUBMISSION FAILED: submission.csv is empty."
+
+    try:
+        submission = pd.read_csv(submission_path)
+        sample = pd.read_csv(sample_path)
+    except Exception as e:
+        return f"SUBMISSION FAILED: Unable to read CSV files.\n{e}"
+
+    if list(submission.columns) != list(sample.columns):
+        return (
+            "SUBMISSION FAILED: Column mismatch.\n"
+            f"Expected: {list(sample.columns)}\n"
+            f"Found: {list(submission.columns)}"
+        )
+
+    if len(submission) != len(sample):
+        return (
+            "SUBMISSION FAILED: Row count mismatch.\n"
+            f"Expected: {len(sample):,}\n"
+            f"Found: {len(submission):,}"
+        )
+
+    if submission.isna().any().any():
+        return "SUBMISSION FAILED: Missing values detected."
+
+    if submission.empty:
+        return "SUBMISSION FAILED: No predictions found."
+
+    try:
+        result = subprocess.run(
+            [
+                "kaggle", "competitions", "submit",
+                "-c", COMP_SLUG,
+                "-f", submission_path,
+                "-m", message
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=180
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            "SUBMISSION STATUS UNKNOWN: Upload timed out. "
+            "Check Kaggle submissions before retrying."
+        )
+
+    if result.returncode != 0:
+        return (
+            f"SUBMISSION FAILED.\n"
+            f"STDOUT:\n{result.stdout}\n"
+            f"STDERR:\n{result.stderr}"
+        )
+
+    return (
+        f"SUBMISSION UPLOAD ACCEPTED.\n"
+        f"Competition: {COMP_SLUG}\n"
+        f"Rows: {len(submission):,}\n"
+        f"Message: {message}\n\n"
+        f"Kaggle response:\n{result.stdout}\n"
+        "Check Kaggle submissions for evaluation status."
+    )
 
 
 @tool
