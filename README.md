@@ -215,7 +215,6 @@ The current priority is improving the reliability of existing functionality rath
 - More robust kernel monitoring and failure handling.
 - Error analysis using out-of-fold predictions.
 - Deployment through Streamlit Community Cloud.
-- Automated code-quality checks through GitHub Actions.
 
 ## License
 
