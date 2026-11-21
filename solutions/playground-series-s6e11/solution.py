@@ -13,7 +13,7 @@ TARGET = 'is_fraud'
 ID = 'id'
 y = train[TARGET].values
 
-# ---------- Feature engineering: 5 new features from top signals ----------
+# ---------- Feature engineering ----------
 def add_features(df):
     df = df.copy()
     # 1. Combined risk: product of the three strongest signals
@@ -28,6 +28,18 @@ def add_features(df):
     df['high_risk_flag'] = ((df['cvv_retry_count'] > 1) |
                             (df['merchant_risk_score'] > df['merchant_risk_score'].median()) |
                             (df['velocity_score'] > df['velocity_score'].median())).astype(int)
+    # 6. last digit of transaction amount
+    df['amt_last_digit'] = (df['amount_usd'] % 10).astype(int)
+    # 7. has disputes flag
+    df['has_disputes'] = (df['prior_disputes'] > 0).astype(int)
+    # 8. amount relative to account balance
+    df['amt_per_balance'] = df['amount_usd'] / (df['account_balance_usd'] + 1.0)
+    # 9. distance relative to time since last transaction
+    df['dist_per_hour'] = df['distance_from_home_km'] / (df['hours_since_last_txn'] + 1.0)
+    # 10. NEW: merchant risk x no-authentication interaction
+    df['risk_x_no_auth'] = df['merchant_risk_score'] * (df['auth_method'] == 'No Authentication').astype(int)
+    # 11. NEW: merchant risk x velocity x no-auth (triple interaction)
+    df['risk_x_velocity_x_no_auth'] = df['risk_x_velocity'] * (df['auth_method'] == 'No Authentication').astype(int)
     return df
 
 train = add_features(train)
