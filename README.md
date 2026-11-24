@@ -121,7 +121,7 @@ The interface uses a custom green visual theme aligned with Kwest's branding.
 6. **Submit predictions:** Ask Kwest to submit the generated `submission.csv`.
 7. **Track experiments:** Log important runs and compare results over time.
 
-## GPU and CPU
+## GPU and CPU Execution
 
 Kwest runs Kaggle kernels on **CPU by default**. GPU is opt-in: it is only used when you explicitly ask for it (for example, "train this on GPU").
 
