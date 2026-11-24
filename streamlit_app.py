@@ -2,6 +2,7 @@ import html
 import json
 import os
 import sys
+import re
 from pathlib import Path
 
 import streamlit as st
@@ -401,7 +402,6 @@ def _parse_kernel_status(text: str):
     return None, None
 
 
-# Friendly labels for the live status pill shown while a tool is running.
 TOOL_LABELS = {
     "inspect_competition_data": "Inspecting competition data",
     "analyze_feature_importance": "Analyzing feature importance",
@@ -503,6 +503,11 @@ def _invoke_agent(prompt: str, on_tool=None) -> str:
         facts.append("tools run: " + ", ".join(tools_used))
     if label:
         facts.append(f"kernel status: {label}")
+    for m in new_messages:
+        if getattr(m, "type", "") == "tool" and getattr(m, "name", "") == "run_on_kaggle":
+            mt = re.search(r"ACCELERATOR:\s*(\w+)", str(m.content))
+            if mt:
+                facts.append(f"accelerator: {mt.group(1)}")
     sub = BASE_DIR / "solutions" / st.session_state.comp_slug / "output" / "submission.csv"
     if sub.exists():
         facts.append("submission.csv exists on disk")
@@ -533,7 +538,6 @@ def _page_header(title: str, subtitle: str = ""):
         st.markdown(f'<div class="kw-sub">{html.escape(subtitle)}</div>', unsafe_allow_html=True)
 
 
-# ── Sidebar ────────────────────────────────────────────────────────────────────
 NAV_ITEMS = [
     ("Chat", "Chat"),
     ("Kwest’s Code", "Kernel"),
@@ -579,7 +583,6 @@ with st.sidebar:
 page = st.session_state.page
 
 
-# ── PAGE: Chat ─────────────────────────────────────────────────────────────────
 if page == "Chat":
     if not st.session_state.messages and not st.session_state.pending_prompt:
         hint = (
@@ -616,8 +619,6 @@ if page == "Chat":
                     unsafe_allow_html=True,
                 )
 
-    # While a reply is being computed: Kwest header + a placeholder that always shows
-    # the three thinking dots, and adds a live status pill when a tool is running.
     status_slot = None
     if st.session_state.pending_prompt:
         st.markdown(
@@ -682,7 +683,6 @@ if page == "Chat":
     )
 
 
-# ── PAGE: Kernel ───────────────────────────────────────────────────────────────
 elif page == "Kernel":
     _page_header("Kwest’s Code", "Generated solution.py for your selected Kaggle competition.")
 
@@ -703,7 +703,6 @@ elif page == "Kernel":
         st.caption("No code yet. Ask Kwest to train a model in Chat and it will appear here.")
 
 
-# ── PAGE: Experiments ──────────────────────────────────────────────────────────
 elif page == "Experiments":
     _page_header("Experiments", "A clear history of your model runs, scores and observations.")
 
@@ -797,7 +796,6 @@ elif page == "Experiments":
             )
 
 
-# ── PAGE: Settings ─────────────────────────────────────────────────────────────
 elif page == "Settings":
     _page_header("Settings", "Manage your competition connection and Kwest session.")
 
@@ -849,7 +847,6 @@ elif page == "Settings":
                 st.rerun()
 
 
-# ── PAGE: About ────────────────────────────────────────────────────────────────
 elif page == "About":
     _page_header("About Kwest", "Your workspace for running and tracking Kaggle competition experiments.")
 
