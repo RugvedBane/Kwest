@@ -24,6 +24,18 @@ def set_comp_slug(slug: str):
     global COMP_SLUG
     COMP_SLUG = slug
 
+def get_kaggle_username() -> str:
+    user = os.environ.get("KAGGLE_USERNAME")
+    if user:
+        return user
+    cfg_dir = os.environ.get("KAGGLE_CONFIG_DIR", os.path.join(os.path.expanduser("~"), ".kaggle"))
+    path = os.path.join(cfg_dir, "kaggle.json")
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)["username"]
+    raise RuntimeError("Kaggle username not found. Set KAGGLE_USERNAME or add ~/.kaggle/kaggle.json.")
+
+KAGGLE_USER = get_kaggle_username()
 
 @tool
 def run_on_kaggle(code: str = None, use_gpu: bool = False) -> str:
@@ -48,7 +60,7 @@ def run_on_kaggle(code: str = None, use_gpu: bool = False) -> str:
     accel = "GPU (T4)" if use_gpu else "CPU"
 
     kernel_slug = f"Kwest-{COMP_SLUG}"
-    kernel_ref = f"rugvedbane/{kernel_slug}"
+    kernel_ref = f"{KAGGLE_USER}/{kernel_slug}"
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -89,7 +101,7 @@ def run_on_kaggle(code: str = None, use_gpu: bool = False) -> str:
     # Kernel metadata
     
     metadata = {
-        "id": f"rugvedbane/{kernel_slug}",
+        "id": f"{kernel_ref}",
         "title": kernel_slug,
         "code_file": "solution.py",
         "language": "python",
