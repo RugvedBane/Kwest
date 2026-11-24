@@ -67,12 +67,12 @@ Implemented in `agent_tools.py`, these tools provide access to Kaggle competitio
 | Tool | Responsibility |
 |---|---|
 | `inspect_competition_data` | Downloads and profiles competition datasets, including shapes, data types, and missing values. |
-| `analyze_feature_importance` | Performs LightGBM-based feature analysis using gain importance, correlation, mutual information, and categorical target rates. |
+| `analyze_feature_importance` | Performs LightGBM-based feature analysis using gain importance, correlation, mutual information, and categorical target rates. It also screens candidate features and recommends the ones that beat a noise-based gate. |
 | `get_competition_info_tool` | Retrieves competition metadata and related information. |
 | `get_leaderboard_tool` | Fetches competition leaderboard information. |
 | `get_submissions_tool` | Retrieves submission history and scores. |
 | `get_current_solution` | Reads the existing solution before modifying it. |
-| `run_on_kaggle` | Writes the training script, pushes a Kaggle kernel, monitors execution, and retrieves output logs. |
+| `run_on_kaggle` | Writes the training script, pushes a Kaggle kernel, monitors execution, and retrieves output logs. Runs on CPU by default, with an opt-in GPU mode. |
 | `submit_to_competition` | Submits the generated prediction file to the competition. |
 
 #### 3. Kaggle Execution Layer
@@ -80,6 +80,7 @@ Implemented in `agent_tools.py`, these tools provide access to Kaggle competitio
 - Uses the Kaggle CLI through Python's `subprocess` module.
 - Generates and pushes Python training scripts as Kaggle kernels.
 - Monitors kernel execution and retrieves relevant logs.
+- Returns the tail of the log when a kernel fails, so the agent can read the actual traceback.
 - Maintains a separate kernel for each competition, with dynamically generated kernel identifiers.
 - Stores competition-specific solution files and kernel metadata locally.
 - Downloads the generated `submission.csv` locally before submission.
@@ -121,6 +122,62 @@ The interface uses a custom green visual theme aligned with Kwest's branding.
 6. **Submit predictions:** Ask Kwest to submit the generated `submission.csv`.
 7. **Track experiments:** Log important runs and compare results over time.
 
+## Installation
+
+### Requirements
+
+- Python 3.11 (developed and tested on 3.11.9)
+- A Kaggle account with an API token
+- An API key for the LLM provider (Kwest uses DeepSeek V4.1 Flash through Rapid Router)
+
+### Setup
+
+1. Clone the repo and create a virtual environment:
+
+```bash
+git clone https://github.com/RugvedBane/Kwest.git
+cd Kwest
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS / Linux
+pip install -r requirements.txt
+```
+
+2. Add your Kaggle credentials. Create an API token in your Kaggle account settings and save the downloaded `kaggle.json` to:
+
+- Windows: `C:\Users\<you>\.kaggle\kaggle.json`
+- macOS / Linux: `~/.kaggle/kaggle.json`
+
+Kwest reads your Kaggle username from this file, or from the `KAGGLE_USERNAME` environment variable if you set it. Nothing else needs to be configured.
+
+3. Create a `.env` file in the project root:
+
+```text
+RAPIDROUTER_API_KEY=your_rapid_router_key
+```
+
+4. Accept the rules of each competition you want to use on kaggle.com. The CLI cannot download data or submit until you do.
+
+### Run
+
+Streamlit UI:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Terminal chat:
+
+```bash
+python Kwest.py
+```
+
+### Notes
+
+- Kaggle only allows kernels with internet access on phone-verified accounts, so verify your account first.
+- Kwest runs on CPU by default. See [GPU and CPU Execution](#gpu-and-cpu-execution) below.
+- `.env`, `kaggle.json`, and `.streamlit/secrets.toml` hold secrets and must never be committed.
+
 ## GPU and CPU Execution
 
 Kwest runs Kaggle kernels on **CPU by default**. GPU is opt-in: it is only used when you explicitly ask for it (for example, "train this on GPU").
@@ -152,14 +209,14 @@ Kwest/
 ├── .streamlit/                 # Streamlit configuration and secrets (secrets git-ignored)
 │
 ├── assets/
-│   └── kwest-logo.svg          # Project logo
+│   └── Kwest-logo.svg          # Project logo
 │
 ├── comp_data/                  # Downloaded competition data (git-ignored)
 │
 ├── solutions/
 │   └── <competition-slug>/
 │       ├── solution.py         # Competition training script
-│       ├── kernel-metadata.json
+│       ├── kernel-metadata.json  # Generated on each run (git-ignored)
 │       └── output/             # Generated kernel outputs (git-ignored)
 │
 ├── .gitignore
@@ -180,25 +237,15 @@ A few implementation decisions were made to improve reliability and keep the arc
 - **Dedicated competition kernels:** Each competition gets its own kernel instead of sharing one across unrelated competitions.
 - **On-demand competition context:** Competition metadata, leaderboard information, and submission history are retrieved through tools rather than loading everything into the agent's initial context.
 - **Controlled tool execution:** Parallel tool calls are disabled to reduce conflicting or duplicated execution requests.
-- **Bounded execution history:** Conversation history and returned kernel logs are limited to prevent unnecessary context growth.
+- **Bounded history:** Conversation history is limited, and failed kernel runs return only the tail of the log so the agent can read the traceback without growing the context.
 - **Error handling:** The agent is instructed to report execution failures and timeouts rather than automatically retrying kernel runs.
+- **CPU by default:** GPU kernels are opt-in because Kaggle's GPU queue is unreliable, and the agent reports which accelerator actually ran.
 - **Existing solution awareness:** The agent can retrieve the current solution before making modifications.
 - **Persistent experiment tracking:** Experiment history is stored locally and remains available across sessions.
 
-## Current Status
+## Status
 
-**Functional prototype under active development.** Kwest works end to end, but it is not yet fully reliable. Generated code and kernel results should always be reviewed by the user.
-
-Implemented and tested:
-
-- LangChain and LangGraph agent with tool calling.
-- Eight competition-related tools.
-- Competition dataset inspection and feature importance analysis.
-- Per-competition Kaggle kernel creation and execution.
-- Kernel status monitoring and output retrieval.
-- Automated prediction submission.
-- Persistent experiment logging and retrieval.
-- Streamlit-based conversational frontend.
+Kwest is in active development. The full competition workflow works end to end and has been validated on a real competition, but it has had limited real-world use so far. Generated code and kernel results should always be reviewed before submitting.
 
 ### End-to-End Validation
 
@@ -213,17 +260,11 @@ Kwest completed the following workflow on the Kaggle Playground Series S6E11 com
 
 This run validates the pipeline end to end and improved on the manual baseline by a small margin. It is a single-competition result, not a claim of consistent leaderboard performance across competitions.
 
-## Future Improvements
+### Roadmap
 
-The current priority is improving the reliability of existing functionality rather than continuously expanding the toolset.
-
-- More reliable code generation and modification.
-- Better validation of tool outputs and execution results.
-- Improved conversation and experiment context management.
-- More robust kernel monitoring and failure handling.
-- Error analysis using out-of-fold predictions.
-- Deployment through Streamlit Community Cloud.
-- Automated code-quality checks through GitHub Actions.
+- Deployment on Streamlit Community Cloud
+- Run logging and LLM cost tracking
+- Automated checks through GitHub Actions
 
 ## License
 
