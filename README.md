@@ -256,7 +256,7 @@ Kwest completed the following workflow on the Kaggle Playground Series S6E11 com
 | Approach | Public Score |
 |---|---:|
 | Previous manual approach | 0.94579 |
-| Kwest-assisted approach | 0.94706 |
+| Kwest-assisted approach | 0.94730 |
 
 This run validates the pipeline end to end and improved on the manual baseline by a small margin. It is a single-competition result, not a claim of consistent leaderboard performance across competitions.
 
