@@ -127,7 +127,7 @@ Kwest runs Kaggle kernels on **CPU by default**. GPU is opt-in: it is only used 
 
 Kaggle's free GPU kernels (T4) are not always available. A GPU run can sit in the "Queued" state and never start. When this happens, Kwest reports the stall after about 150 seconds and stops. It does not retry on its own. You can cancel the session on kaggle.com and ask Kwest to rerun on CPU.
 
-Use CPU for tabular models such as LightGBM, XGBoost and CatBoost. These train quickly on CPU for typical competition datasets. Use GPU only when training neural networks, where it makes a real difference.
+Use CPU for tabular models such as LightGBM, XGBoost, and CatBoost. These train quickly on CPU for typical competition datasets. Use GPU only when training neural networks, where it makes a real difference.
 
 ## Tech Stack
 
