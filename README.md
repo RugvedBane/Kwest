@@ -121,6 +121,14 @@ The interface uses a custom green visual theme aligned with Kwest's branding.
 6. **Submit predictions:** Ask Kwest to submit the generated `submission.csv`.
 7. **Track experiments:** Log important runs and compare results over time.
 
+## GPU and CPU
+
+Kwest runs Kaggle kernels on **CPU by default**. GPU is opt-in: it is only used when you explicitly ask for it (for example, "train this on GPU").
+
+Kaggle's free GPU kernels (T4) are not always available. A GPU run can sit in the "Queued" state and never start. When this happens, Kwest reports the stall after about 150 seconds and stops. It does not retry on its own. You can cancel the session on kaggle.com and ask Kwest to rerun on CPU.
+
+Use CPU for tabular models such as LightGBM, XGBoost and CatBoost. These train quickly on CPU for typical competition datasets. Use GPU only when training neural networks, where it makes a real difference.
+
 ## Tech Stack
 
 | Category | Technologies |
