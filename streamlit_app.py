@@ -47,7 +47,7 @@ def _setup_kaggle_credentials() -> bool:
 
 
 def _llm_key_present() -> bool:
-    if os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"):
+    if os.getenv("RAPIDROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"):
         return True
     try:
         return bool(st.secrets.get("rapid_router_key"))

@@ -33,7 +33,7 @@ def create_model():
         model="deepseek/deepseek-v4.1-flash-1017", 
         temperature=0.2, 
         max_tokens=8192,
-        openai_api_key=os.getenv("OPENROUTER_API_KEY"),
+        openai_api_key=os.getenv("RAPIDROUTER_API_KEY"),
         base_url="https://rapidrouter.ai/api/v1"
         ).bind(parallel_tool_calls=False)
 
