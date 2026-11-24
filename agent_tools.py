@@ -4,13 +4,16 @@ import time
 import subprocess
 import tempfile
 import shutil
-import pandas as pd
 import zipfile
+import pandas as pd
+import numpy as np
+from itertools import combinations
+from sklearn.model_selection import train_test_split, StratifiedKFold, KFold
+from sklearn.metrics import roc_auc_score, log_loss, mean_squared_error
+from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
 from langchain_core.tools import tool
-from main import get_my_submissions, get_competition_info, get_leaderboard, get_my_submissions
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score 
-from sklearn.feature_selection import mutual_info_classif
+from main import get_my_submissions, get_competition_info, get_leaderboard
 import lightgbm as lgb
 
 COMP_SLUG = ""
@@ -23,7 +26,7 @@ def set_comp_slug(slug: str):
 
 
 @tool
-def run_on_kaggle(code: str = None) -> str:
+def run_on_kaggle(code: str = None, use_gpu: bool = False) -> str:
     """
     Pushes code to Kaggle, waits for actual kernel completion,
     downloads fresh outputs and verifies submission.csv.
@@ -33,11 +36,16 @@ def run_on_kaggle(code: str = None) -> str:
     solution.py unchanged — use this after manually cancelling
     a stuck/queued kernel on kaggle.com and wanting to just retry
     the same run.
+    
+    use_gpu: False (default) runs on CPU. Set True ONLY if the user
+    explicitly asks for GPU. When True, the script must use GPU params
+    (XGB device='cuda'); when False it must contain none.
     """
 
     global LAST_OUTPUT_FOLDER
 
     LAST_OUTPUT_FOLDER = ""
+    accel = "GPU (T4)" if use_gpu else "CPU"
 
     kernel_slug = f"Kwest-{COMP_SLUG}"
     kernel_ref = f"rugvedbane/{kernel_slug}"
@@ -87,7 +95,7 @@ def run_on_kaggle(code: str = None) -> str:
         "language": "python",
         "kernel_type": "script",
         "is_private": True,
-        "enable_gpu": False,
+        "enable_gpu": use_gpu,
         "enable_internet": True,
         "dataset_sources": [],
         "competition_sources": [COMP_SLUG],
@@ -129,7 +137,7 @@ def run_on_kaggle(code: str = None) -> str:
 
     while time.time() - start_time < timeout:
         status_result = subprocess.run(
-            ["kaggle", "kernels", "status", kernel_slug],
+            ["kaggle", "kernels", "status", kernel_ref],
             capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=60
         )
@@ -155,7 +163,7 @@ def run_on_kaggle(code: str = None) -> str:
 
         if not running_seen and elapsed_now > queue_limit:
             return (
-                f"KERNEL STUCK IN QUEUE for {elapsed_now}s and never started.\n"
+                f"KERNEL STUCK IN QUEUE for {elapsed_now}s on {accel} and never started.\n"
                 "Cancel it on kaggle.com (stop the session), then ask me to "
                 "rerun with no code to re-push the same solution."
             )
@@ -172,9 +180,26 @@ def run_on_kaggle(code: str = None) -> str:
         )
 
     if terminal_status != "COMPLETE":
+        log_tail = ""
+        try:
+            subprocess.run(
+                ["kaggle", "kernels", "output", kernel_ref, "-p", output_folder],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=180
+            )
+            for fn in os.listdir(output_folder):
+                fp = os.path.join(output_folder, fn)
+                if os.path.isfile(fp) and fn.lower().endswith((".log", ".txt", ".out")):
+                    with open(fp, "r", encoding="utf-8", errors="replace") as f:
+                        log_tail += f"\n--- {fn} (last 3000 chars) ---\n" + f.read()[-8000:]
+        except Exception as e:
+            log_tail = f"(could not fetch log: {e})"
+
         return (
             f"KERNEL {terminal_status}.\n"
+            f"ACCELERATOR: {accel}\n"
             f"Execution status: {status_text}\n"
+            f"LOG TAIL:{log_tail or ' (no log available)'}\n"
             "No submission will be attempted."
         )
 
@@ -259,6 +284,7 @@ def run_on_kaggle(code: str = None) -> str:
     return (
         f"KERNEL STATUS: COMPLETE\n"
         f"EXECUTION TIME: {elapsed} seconds\n"
+        f"ACCELERATOR: {accel}\n"
         f"{submission_status}\n\n"
         f"DOWNLOADED FILES:\n"
         + "\n".join(files)
@@ -486,93 +512,278 @@ def detect_target_column() -> str:
         f"sample_submission.csv didn't agree. Diff candidates: {diff}"
     )
 
+MAX_REPORT_CHARS = 9000
+METRIC_NAMES = {"binary": "AUC", "multiclass": "log-loss", "regression": "RMSE"}
+
+
+def _prepare_target(raw, task="auto"):
+    """Encode the target once so every section works for any task.
+    Returns (task, y, Y, k, classes). y = int labels (classification) or floats (regression).
+    Y = (n, m) float matrix used to measure how a category level differs from average."""
+    is_num = pd.api.types.is_numeric_dtype(raw) and not pd.api.types.is_bool_dtype(raw)
+    if task == "auto":
+        if is_num and (raw.nunique() > 20 or (raw.dropna() % 1 != 0).any()):
+            task = "regression"
+        else:
+            task = "binary" if raw.nunique() == 2 else "multiclass"
+    if task == "regression":
+        y = raw.to_numpy(dtype=float)
+        Y = ((y - y.mean()) / (y.std() + 1e-9)).reshape(-1, 1)
+        return "regression", y, Y, 1, None
+    le = LabelEncoder()
+    y = le.fit_transform(raw.astype(str))
+    k = len(le.classes_)
+    Y = np.eye(k)[y] if k > 2 else y.reshape(-1, 1).astype(float)
+    return ("binary" if k == 2 else "multiclass"), y, Y, k, list(le.classes_)
+
+
+def _score(task, y, pred, k):
+    """Higher is always better: AUC, -log-loss, -RMSE."""
+    if task == "binary":
+        return roc_auc_score(y, pred[:, 0])
+    if task == "multiclass":
+        return -log_loss(y, pred, labels=list(range(k)))
+    return -mean_squared_error(y, pred[:, 0]) ** 0.5
+
+
+def _fit_predict(task, Xtr, ytr, Xva, seed=0):
+    kw = dict(n_estimators=100, learning_rate=0.1, num_leaves=15, subsample=0.8,
+              subsample_freq=1, colsample_bytree=0.8, n_jobs=4, verbosity=-1,
+              random_state=seed)
+    if task == "regression":
+        return lgb.LGBMRegressor(**kw).fit(Xtr, ytr).predict(Xva).reshape(-1, 1)
+    p = lgb.LGBMClassifier(**kw).fit(Xtr, ytr).predict_proba(Xva)
+    return p[:, 1:] if task == "binary" else p
+
+
+def _digit_candidates(X, floats):
+    """Generic 'how the number is written' candidates for float columns:
+    cents remainder, tenths digit, leading digit, integer part (low-cardinality only), round-number flag."""
+    out = []
+    for c in floats:
+        av = X[c].astype(float).abs()
+        tot = (av * 100).round()
+        cents, tenths, intpart = tot % 100, (tot // 10) % 10, tot // 100
+        pos = av.where(av > 0)
+        lead = np.floor(pos / 10 ** np.floor(np.log10(pos) + 1e-12))
+        t = f"(df['{c}'].abs() * 100).round()"
+        out.append((f"cat: ({t} % 100).astype(int)  [cents of {c}]", cents.astype("category")))
+        out.append((f"cat: (({t} // 10) % 10).astype(int)  [first decimal of {c}]", tenths.astype("category")))
+        out.append((f"cat: first significant digit of abs({c})  [leading digit of {c}]", lead.astype("category")))
+        out.append((f"({t} % 100 == 0).astype(int)  [round number flag for {c}]", (cents == 0).astype(int)))
+        if 2 <= intpart.nunique() <= 100:
+            out.append((f"cat: ({t} // 100).astype(int)  [integer part of {c}]", intpart.astype("category")))
+    return out
+
+
+def _scan_candidate_features(X, task, y, Y, k, ranked_feats, max_feats=20):
+    """Screen candidate features one by one, then add them greedily until gains stop
+    beating the scan's own noise. X must be reset-indexed (text columns as category dtype)."""
+    if task == "multiclass" and np.bincount(y).min() < 10:
+        return "CANDIDATE SCAN skipped: a class has fewer than 10 rows in the sample."
+    splitter = KFold if task == "regression" else StratifiedKFold
+    folds = list(splitter(3, shuffle=True, random_state=0).split(X, y))
+
+    def score(F, seed=0):
+        oof = np.zeros((len(F), k if task == "multiclass" else 1))
+        for tr, va in folds:
+            oof[va] = _fit_predict(task, F.iloc[tr], y[tr], F.iloc[va], seed)
+        return _score(task, y, oof, k)
+
+    d = lambda c: f"df['{c}']"
+    ranked = [f for f in ranked_feats if f in X.columns]
+    top = ranked[:8]
+    floats = [f for f in ranked if pd.api.types.is_float_dtype(X[f]) and X[f].nunique() > 50][:4]
+    nums = [f for f in top if pd.api.types.is_numeric_dtype(X[f]) and X[f].nunique() > 2][:4]
+    cats = [f for f in top if str(X[f].dtype) == "category"][:2]
+    cand = []  # (expression, values)
+
+    for a, b in combinations(nums, 2):
+        cand += [(f"{d(a)} * {d(b)}", X[a] * X[b]),
+                 (f"{d(a)} / ({d(b)}.abs() + 1e-6)", X[a] / (X[b].abs() + 1e-6)),
+                 (f"{d(a)} - {d(b)}", X[a] - X[b])]
+
+    for c in cats:
+        s = X[c].astype(str)
+        # levels whose target behaviour differs most from average (any task type)
+        g = pd.DataFrame(Y).groupby(s.values)
+        dev = ((g.mean() - Y.mean(0)).abs() / (Y.std(0) + 1e-9)).max(axis=1)
+        dev = dev[g.size() >= 0.01 * len(X)].sort_values(ascending=False)
+        for lvl in list(dev.index[:2]):
+            flag = (s == lvl).astype(int)
+            cand.append((f"({d(c)}.astype(str) == '{lvl}').astype(int)", flag))
+            for n in nums[:2]:
+                cand.append((f"{d(n)} * ({d(c)}.astype(str) == '{lvl}').astype(int)", X[n] * flag))
+        if X[c].nunique() > 10:
+            freq = s.map(s.value_counts(normalize=True))
+            cand.append((f"{d(c)}.astype(str).map(train['{c}'].astype(str).value_counts(normalize=True)).fillna(0)", freq))
+
+    bools = [c for c in X.columns if X[c].nunique() == 2 and pd.api.types.is_numeric_dtype(X[c])]
+    if len(bools) >= 3:
+        cand.append((f"df[{bools}].astype(int).sum(axis=1)", X[bools].sum(axis=1)))
+
+    cand = cand[:40] + _digit_candidates(X, floats)
+    prepared = []
+    for e, v in cand[:60]:
+        if str(getattr(v, "dtype", "")) == "category":
+            prepared.append((e, v))
+        else:
+            a = np.asarray(v, dtype=float)
+            prepared.append((e, np.where(np.isfinite(a), a, np.nan)))
+    cand = prepared
+
+    base = score(X)
+    noise = float(np.std([base, score(X, seed=1), score(X, seed=2)]))   # run-to-run noise of this scan
+    gate = max(3 * noise, 3e-3 * abs(base))            # a feature must beat the noise AND a minimum lift
+    singles = sorted(((score(X.assign(cand_=v)) - base, e, v) for e, v in cand),
+                     key=lambda t: t[0], reverse=True)
+
+    # Greedy forward selection: stop at max_feats, at lift <= 0, or after 3 failures
+    F, cur, chosen, fails = X.copy(), base, [], 0
+    for lift, e, v in singles:
+        if lift <= 0 or len(chosen) >= max_feats or fails >= 3:
+            break
+        name = f"cand_{len(chosen)}"
+        s2 = score(F.assign(**{name: v}))
+        if s2 - cur >= gate:
+            F[name] = v
+            chosen.append((s2 - cur, e))
+            cur = s2
+        else:
+            fails += 1
+
+    out = [f"RECOMMENDED FEATURES (scan on {len(X):,} rows, 3-fold, {METRIC_NAMES[task]} proxy, "
+           f"baseline {base:.5f}, gate {gate:.5f}, higher=better)"]
+    out += [f"{g:+.5f} | {e}" for g, e in chosen] or ["none passed the gate: add no features"]
+    out.append(f"total gain {cur - base:+.5f} with {len(chosen)} features")
+    return "\n".join(out)
+
 @tool
-def analyze_feature_importance() -> str:
+def analyze_feature_importance(task: str = "auto") -> str:
     """
-    Runs a quick analysis of which features actually relate to the target:
-    LightGBM feature importance, numeric correlation with target, mutual
-    information (captures nonlinear relationships), and target rate by
-    category for top categorical columns. Meant for guiding feature
-    engineering / ablation decisions, not for the final model.
+    Quick analysis of which features relate to the target, for ANY task type
+    (binary, multiclass, regression; text labels like Yes/No are fine): LightGBM
+    importance, correlation, mutual information, target behaviour by category, and a
+    screen of candidate engineered features that returns a RECOMMENDED FEATURES list.
+    Uses AUC / log-loss / RMSE as proxy metrics, not the competition metric.
     Call inspect_competition_data first if comp_data hasn't been downloaded yet.
+    Leave task='auto' unless auto-detection is clearly wrong
+    (use 'regression', 'binary' or 'multiclass').
     """
-
     csv_path = os.path.join(DATA_FOLDER, "train.csv")
-
     if not os.path.exists(csv_path):
         return "train.csv not found locally — run inspect_competition_data first."
-
     try:
         target_col = detect_target_column()
     except ValueError as e:
         return str(e)
 
     df = pd.read_csv(csv_path)
-
     if target_col not in df.columns:
-        return f"Detected target '{target_col}' not actually in train.csv columns: {list(df.columns)}"
+        return f"Detected target '{target_col}' not in train.csv columns: {list(df.columns)}"
+    df = df.dropna(subset=[target_col]).reset_index(drop=True)
 
-    y = df[target_col]
+    try:
+        task, y_all, Y_all, k, classes = _prepare_target(df[target_col], task)
+    except Exception as e:
+        return f"Could not encode target '{target_col}': {e}"
+    if task != "regression" and k < 2:
+        return "Target has a single class; nothing to analyze."
+
     X = df.drop(columns=[target_col])
+    dropped = []
+    for c in list(X.columns):
+        s = X[c]
+        is_text = not pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s)
+        id_like = c.lower() == "id" or (
+            s.nunique() == len(X) and (pd.api.types.is_integer_dtype(s) or is_text))
+        if id_like or (is_text and s.nunique() > 500):
+            dropped.append(c)
+            X = X.drop(columns=[c])
+    for c in X.columns:
+        if pd.api.types.is_bool_dtype(X[c]):
+            X[c] = X[c].astype(int)
+        elif not pd.api.types.is_numeric_dtype(X[c]):
+            X[c] = X[c].astype("category")
+    cat_cols = [c for c in X.columns if str(X[c].dtype) == "category"]
+    num_cols = [c for c in X.columns if c not in cat_cols]
 
-    cat_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
-    num_cols = X.select_dtypes(include=['number']).columns.tolist()
+    idx = np.random.RandomState(42).permutation(len(X))[:min(150_000, len(X))]
+    Xs, ys, Ys = X.iloc[idx].reset_index(drop=True), y_all[idx], Y_all[idx]
 
-    drop_cols = [target_col]
-    if 'id' in X.columns:
-        X = X.drop(columns=['id'])
+    strat = ys if task != "regression" and np.bincount(ys).min() >= 2 else None
+    Xtr, Xva, ytr, yva = train_test_split(Xs, ys, test_size=0.2, stratify=strat, random_state=42)
+    kw = dict(n_estimators=200, num_leaves=63, learning_rate=0.05, random_state=42, verbosity=-1)
+    model = (lgb.LGBMRegressor if task == "regression" else lgb.LGBMClassifier)(**kw)
+    model.fit(Xtr, ytr, eval_set=[(Xva, yva)], callbacks=[lgb.early_stopping(20, verbose=False)])
+    importances = pd.Series(model.booster_.feature_importance(importance_type="gain"),
+                            index=Xs.columns).sort_values(ascending=False)
+    if task == "regression":
+        pv = model.predict(Xva).reshape(-1, 1)
+    elif task == "binary":
+        pv = model.predict_proba(Xva)[:, 1:]
+    else:
+        pv = model.predict_proba(Xva)
+    valid = _score(task, yva, pv, k)
+    valid = valid if task == "binary" else -valid
 
-    X_enc = X.copy()
-    for col in cat_cols:
-        X_enc[col] = X_enc[col].astype('category').cat.codes
+    head = f"TASK: {task} | rows: {len(df):,} | features: {X.shape[1]}"
+    if task == "binary":
+        head += f" | positive class: {classes[1]}"
+    if task == "multiclass":
+        head += f" | classes: {k}"
+    if dropped:
+        head += f"\nignored columns (id-like or high-cardinality text): {dropped}"
+    head += (f"\nQUICK MODEL VALID {METRIC_NAMES[task]}: {valid:.5f} "
+             "(sampled model for ranking only, proxy for the competition metric)\n")
 
-    sample_size = min(150_000, len(X_enc))
-    sample_idx = X_enc.sample(sample_size, random_state=42).index
-    X_sample, y_sample = X_enc.loc[sample_idx], y.loc[sample_idx]
+    n_scan = 30_000 if (task == "multiclass" and k > 5) else 60_000
+    try:
+        scan = _scan_candidate_features(Xs.iloc[:n_scan].reset_index(drop=True), task,
+                                        ys[:n_scan], Ys[:n_scan], k,
+                                        importances.head(8).index.tolist())
+    except Exception as e:
+        scan = f"CANDIDATE SCAN failed: {e}"
 
-    X_train, X_valid, y_train, y_valid = train_test_split(
-        X_sample, y_sample, test_size=0.2, stratify=y_sample, random_state=42
-    )
+    body = "\n=== FEATURE IMPORTANCE (gain, top 20) ===\n" + importances.head(20).to_string() + "\n"
 
-    model = lgb.LGBMClassifier(
-        n_estimators=200,
-        num_leaves=63,
-        learning_rate=0.05,
-        random_state=42,
-        verbosity=-1
-    )
-    model.fit(
-        X_train, y_train,
-        eval_set=[(X_valid, y_valid)],
-        callbacks=[lgb.early_stopping(20, verbose=False)]
-    )
+    if num_cols and task != "multiclass":
+        corr = (Xs[num_cols].replace([np.inf, -np.inf], np.nan)
+                .corrwith(pd.Series(ys.astype(float))).dropna()
+                .sort_values(key=abs, ascending=False))
+        body += "\n=== NUMERIC CORRELATION WITH TARGET (top 15 by |corr|) ===\n" + corr.head(15).to_string() + "\n"
 
-    importances = pd.Series(
-        model.booster_.feature_importance(importance_type='gain'),
-        index=X_enc.columns
-    ).sort_values(ascending=False)
+    Xmi = Xs.copy()
+    for c in cat_cols:
+        Xmi[c] = Xmi[c].cat.codes
+    for c in num_cols:
+        Xmi[c] = Xmi[c].replace([np.inf, -np.inf], np.nan)
+        Xmi[c] = Xmi[c].fillna(Xmi[c].median())
+    Xmi = Xmi.fillna(0)
+    m = min(50_000, len(Xmi))
+    mi_fn = mutual_info_regression if task == "regression" else mutual_info_classif
+    mi = mi_fn(Xmi.iloc[:m], ys[:m], discrete_features=[c in cat_cols for c in Xmi.columns],
+               random_state=42)
+    mi_series = pd.Series(mi, index=Xmi.columns).sort_values(ascending=False)
+    body += "\n=== MUTUAL INFORMATION WITH TARGET (top 15) ===\n" + mi_series.head(15).to_string() + "\n"
 
-    result = f"QUICK MODEL VALID AUC: {roc_auc_score(y_valid, model.predict_proba(X_valid)[:, 1]):.5f}\n"
-    result += "(sampled model for ranking only — not representative of final score)\n\n"
+    top_cats = [c for c in mi_series.index if c in cat_cols and X[c].nunique() <= 200][:5]
+    if top_cats:
+        what = {"binary": "rate of positive class", "regression": "mean target",
+                "multiclass": "most common class and its share"}[task]
+        body += f"\n=== TARGET BY CATEGORY: {what} (levels with >=30 rows) ===\n"
+    for col in top_cats:
+        g = X[col].astype(str).values
+        if task == "multiclass":
+            ct = pd.crosstab(g, y_all)
+            n = ct.sum(axis=1)
+            share = ct.div(n, axis=0)
+            r = pd.DataFrame({"class": [classes[i] for i in share.values.argmax(axis=1)],
+                              "share": share.max(axis=1).round(3), "n": n}, index=ct.index)
+            r = r[r["n"] >= 30].sort_values("share", ascending=False)
+        else:
+            r = pd.DataFrame({"y": y_all, "g": g}).groupby("g")["y"].agg(["mean", "count"])
+            r = r[r["count"] >= 30].sort_values("mean", ascending=False)
+        body += f"\n{col}:\n{r.head(8).to_string()}\n"
 
-    result += "=== FEATURE IMPORTANCE (gain, top 20) ===\n"
-    result += importances.head(20).to_string() + "\n\n"
-
-    if num_cols:
-        corr = df[num_cols + [target_col]].corr()[target_col].drop(target_col).sort_values(key=abs, ascending=False)
-        result += "=== NUMERIC CORRELATION WITH TARGET (top 15 by |corr|) ===\n"
-        result += corr.head(15).to_string() + "\n\n"
-
-    mi = mutual_info_classif(X_sample, y_sample, discrete_features=[c in cat_cols for c in X_enc.columns], random_state=42)
-    mi_series = pd.Series(mi, index=X_enc.columns).sort_values(ascending=False)
-    result += "=== MUTUAL INFORMATION WITH TARGET (top 15) ===\n"
-    result += mi_series.head(15).to_string() + "\n\n"
-
-    if cat_cols:
-        result += "=== TARGET RATE BY CATEGORY (top 5 categorical cols by MI) ===\n"
-        top_cats = [c for c in mi_series.index if c in cat_cols][:5]
-        for col in top_cats:
-            rates = df.groupby(col)[target_col].mean().sort_values(ascending=False)
-            result += f"\n{col}:\n{rates.head(10).to_string()}\n"
-
-    return result[:8000]
+    return (head + "\n" + scan + "\n" + body)[:MAX_REPORT_CHARS]
