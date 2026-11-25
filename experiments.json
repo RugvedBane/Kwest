@@ -50,5 +50,17 @@
         "description": "LGBM+XGB rank blend + 5 numeric combo features, CPU",
         "score": "0.94722",
         "notes": "public LB best."
+    },
+    {
+        "comp_slug": "playground-series-s6e11",
+        "description": "XGB + LGBM rank blend",
+        "score": "0.94730",
+        "notes": "has total 9 features risk_combo, risk_sum, cvv_per_velocity, high_risk_flag, amt_last_digit, has_disputes, amt_per_balance, dist_per_hour"
+    },
+    {
+        "comp_slug": "playground-series-s6e11",
+        "description": "LGBM + LR",
+        "score": "0.945799",
+        "notes": "The score is the oof score not leaderboard and added 15 more features on top of strong features"
     }
 ]
