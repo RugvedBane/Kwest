@@ -36,8 +36,6 @@ def get_kaggle_username() -> str:
             return json.load(f)["username"]
     raise RuntimeError("Kaggle username not found. Set KAGGLE_USERNAME or add ~/.kaggle/kaggle.json.")
 
-KAGGLE_USER = get_kaggle_username()
-
 @tool
 def run_on_kaggle(code: str = None, use_gpu: bool = False) -> str:
     """
@@ -61,7 +59,7 @@ def run_on_kaggle(code: str = None, use_gpu: bool = False) -> str:
     accel = "GPU (T4)" if use_gpu else "CPU"
 
     kernel_slug = f"Kwest-{COMP_SLUG}"
-    kernel_ref = f"{KAGGLE_USER}/{kernel_slug}"
+    kernel_ref = f"{get_kaggle_username()}/{kernel_slug}"
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
