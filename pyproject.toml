@@ -1,0 +1,5 @@
+[tool.ruff.lint.per-file-ignores]
+"agent_tools.py" = ["RUF013", "PLW1510", "BLE001", "C408", "ISC004"]
+"Kwest.py" = ["F841"]
+"main.py" = ["PLW1510"]
+"streamlit_app.py" = ["S110", "BLE001", "TRY004"]
