@@ -24,3 +24,9 @@ jobs:
 
       - name: Run Ruff
         run: ruff check agent_tools.py Kwest.py memory.py main.py streamlit_app.py
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Import smoke test
+        run: python -c "import Kwest, agent_tools, memory, main"
