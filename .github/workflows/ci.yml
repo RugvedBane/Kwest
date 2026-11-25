@@ -1,0 +1,26 @@
+
+name: Kwest CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Run Ruff
+        run: ruff check agent_tools.py Kwest.py memory.py main.py streamlit_app.py
