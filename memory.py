@@ -1,6 +1,5 @@
-import os
 import json
-from datetime import datetime
+import os
 
 EXPERIMENTS_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
