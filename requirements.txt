@@ -1,9 +1,9 @@
-langchain-core
-langchain-openai
-langgraph
-python-dotenv
+langchain-core==1.8.0
+langchain-openai==1.7.4
+langgraph==1.2.19
+python-dotenv==1.2.4
 kaggle==1.6.17
-scikit-learn
-lightgbm
-pandas
-streamlit
+scikit-learn==1.9.1
+lightgbm==4.7.0
+pandas==3.1.1
+streamlit==1.66.1

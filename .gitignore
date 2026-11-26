@@ -16,5 +16,6 @@ test.csv
 
 comp_data/
 solutions/*/output/
+solutions/*/kernel-metadata.json
 
 .streamlit/secrets.toml
