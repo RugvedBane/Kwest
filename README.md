@@ -260,11 +260,19 @@ Kwest completed the following workflow on the Kaggle Playground Series S6E11 com
 
 This run validates the pipeline end to end and improved on the manual baseline by a small margin. It is a single-competition result, not a claim of consistent leaderboard performance across competitions.
 
-### Roadmap
+## Limitations
 
-- Deployment on Streamlit Community Cloud
-- Run logging and LLM cost tracking
-- Automated checks through GitHub Actions
+Kwest is an early version. These are the main things to know before relying on it:
+
+- **Human-guided by design.** Kwest runs, monitors and iterates on solutions under your direction. It does not find new modeling ideas on its own, so results depend heavily on the guidance you give it.
+- **Limited real-world validation.** The full workflow has been tested end to end on a small number of competitions. Results across many competitions have not been established yet.
+- **Tabular competitions only.** The tools, including the feature importance analysis, assume a `train.csv` and `test.csv` setup. Image, text and other competition types are untested.
+- **Short conversation memory.** Chat history is truncated to the most recent messages. Experiments are saved to `experiments.json`, but Kwest has no long-term memory of past conversations.
+- **No outside knowledge of the competition.** Kwest does not read public notebooks or discussions. Its ideas come from the LLM and from you.
+- **No automatic retries.** On a failed or timed-out run, Kwest reports the error and stops, and it runs one tool call per request. It does not loop on its own. For GPU stalls, see [GPU and CPU Execution](#gpu-and-cpu-execution).
+- **Local use only.** Kwest is not deployed anywhere. Hosting it on Streamlit Community Cloud would wipe saved experiments and solutions, because its filesystem is temporary. A real database is needed first.
+- **Pinned Kaggle CLI.** Kwest uses `kaggle==1.6.17`. Newer versions of the CLI have not been tested.
+- **Review before submitting.** Generated code can contain bugs. Kwest never submits on its own, so check results before you submit.
 
 ## License
 
