@@ -140,7 +140,7 @@ def run_on_kaggle(code: str = None, use_gpu: bool = False) -> str:
     time.sleep(30)
 
     start_time = time.time()
-    timeout = 2700
+    timeout = 10800
     poll_interval = 15
     queue_limit = 150  
     terminal_status = None
@@ -216,7 +216,6 @@ def run_on_kaggle(code: str = None, use_gpu: bool = False) -> str:
 
     print(f"Kernel completed successfully in {elapsed} seconds.")
 
-    # Download fresh output only after completion
     output_result = subprocess.run(
         [
             "kaggle", "kernels", "output",

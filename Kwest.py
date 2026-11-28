@@ -27,7 +27,7 @@ MAX_HISTORY_MSG_LEN = 400
 
 # calling groq model
 def create_model():
-    model_name = os.getenv("GROQ_MODEL")
+    # model_name = os.getenv("GROQ_MODEL")
 
     return ChatOpenAI(
         model="deepseek/deepseek-v4.1-flash-1017", 
